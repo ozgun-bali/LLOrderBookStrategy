@@ -44,8 +44,15 @@ Target toolchain: GCC 8.5.0, C++11, Linux x86-64. No external dependencies.
 
 ## Assumptions
 
-<!-- every point where the protocol docs or the assignment were unclear.
-     See the working notes for the running list. -->
+Cash flow and P&L are stored in `int64_t`. The maximum term per fill is
+`order_quantity * price`, so with the configured values (100 lots, an upper bound of
+100,000 kurus) this comes to 10^7, leaving headroom of around 9x10^11 fills before
+`INT64_MAX` — around 4 billion times the order count a typical session produces. If the
+configuration gets more extreme (10^6 lots, a price near `INT32_MAX`) that headroom drops
+to about 4,300 fills, so the multiplication and the accumulation are both checked with
+`__builtin_mul_overflow` and `__builtin_add_overflow` in debug builds. `__int128` is not
+used for the simple reason that it falls outside ISO C++11 and raises a warning under
+`-Wpedantic`.
 
 ## Benchmark
 

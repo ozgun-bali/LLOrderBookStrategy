@@ -1,7 +1,7 @@
-// Test runner entry point.
+// Test runner entry point. Cases register themselves, so nothing is listed here.
 
 #include "test_framework.hpp"
 
 int main() {
-    return 0;
+    return llobtest::run_all();
 }

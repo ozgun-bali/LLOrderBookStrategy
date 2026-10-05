@@ -13,6 +13,10 @@ typedef uint64_t Quantity;
 typedef uint64_t OrderId;      // unique per (order book, side) only
 typedef uint32_t OrderBookId;
 typedef uint64_t Timestamp;    // seconds * 1e9 + nanoseconds, composed from 'T' + msg
+typedef int64_t Position; // Min position -> negative --> if unsigned the whole thing 
+typedef int64_t Cash; // For cashflow --> *4b of headspace with typical sessions
+typedef uint32_t LevelIndex; // Index to keep track of the level
+
 
 enum Side {
     SIDE_BUY = 0,
