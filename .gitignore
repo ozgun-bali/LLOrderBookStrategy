@@ -1,0 +1,17 @@
+build/
+orderbook
+orderbook-debug
+run_tests
+*.o
+*.d
+
+# market data and run output
+*.bin
+*.pcap
+config.txt
+orders.csv
+
+# editors
+.vscode/
+.idea/
+*.swp

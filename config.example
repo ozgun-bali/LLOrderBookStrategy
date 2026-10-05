@@ -1,0 +1,13 @@
+# Statech - Low Latency Order Book and Strategy
+# Copy to config.txt and adjust. Values below are the assignment's own, except
+# the position limits and capacities, which the assignment leaves open.
+
+target_order_book_id = 73616
+tick_size            = 1
+
+order_quantity       = 100
+minimum_position     = -1000
+maximum_position     = 1000
+
+max_active_orders    = 1048576
+max_price_levels     = 65536
