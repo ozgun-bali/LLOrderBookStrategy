@@ -59,8 +59,7 @@ public:
         std::memset(session_, 0, MOLD_LEN_SESSION);
     }
 
-    // A gap means updates were missed, and without a snapshot feed the book
-    // cannot be trusted again. Stays false until the session changes.
+    
     bool reliable() const { return reliable_; }
 
     const MoldStats& stats() const { return stats_; }
@@ -83,8 +82,7 @@ public:
 
         if (count == MOLD_COUNT_HEARTBEAT) {
             ++stats_.heartbeats;
-            // A heartbeat carries the sequence of the next message to come, so
-            // it still exposes a gap even though it has no payload.
+            
             if (have_expected_ && seq > expected_) {
                 ++stats_.sequence_gaps;
                 reliable_ = false;
@@ -93,22 +91,22 @@ public:
             return;
         }
 
-        if (!have_expected_) {           // first data packet defines the origin
+        if (!have_expected_) {           
             expected_      = seq;
             have_expected_ = true;
         }
 
-        const uint64_t end = seq + count;   // one past the last message
+        const uint64_t end = seq + count;   
         std::size_t skip = 0;
 
         if (seq > expected_) {
             ++stats_.sequence_gaps;
             reliable_ = false;
         } else if (end <= expected_) {
-            ++stats_.duplicates;            // every message already seen
+            ++stats_.duplicates;            
             return;
         } else if (seq < expected_) {
-            ++stats_.duplicates;            // retransmission overlapping the tail
+            ++stats_.duplicates;           
             skip = (std::size_t)(expected_ - seq);
         }
 
@@ -124,7 +122,7 @@ private:
         std::size_t off = MOLD_HEADER_LEN;
 
         for (uint16_t i = 0; i < count; ++i) {
-            if (!r.has(off + 2)) {          // length field itself runs past the end
+            if (!r.has(off + 2)) {         
                 ++stats_.invalid_packets;
                 reliable_ = false;
                 return false;
