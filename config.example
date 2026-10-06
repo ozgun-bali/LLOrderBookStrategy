@@ -1,6 +1,11 @@
 # Statech - Low Latency Order Book and Strategy
-# Copy to config.txt and adjust. Values below are the assignment's own, except
-# the position limits and capacities, which the assignment leaves open.
+# Copy to config.txt and adjust.
+#
+# target_order_book_id and tick_size come from the assignment. The capacities
+# are sized from the sample feed (itch_data_250815_HI2.dat, book 73616 =
+# EKGYO.E): that day peaked at 4,528 live orders and traded between 17,060 and
+# 20,840 kurus, a band of 3,780 ticks. The values below leave well over 10x
+# headroom and still fit comfortably in cache.
 
 target_order_book_id = 73616
 tick_size            = 1
@@ -9,5 +14,5 @@ order_quantity       = 100
 minimum_position     = -1000
 maximum_position     = 1000
 
-max_active_orders    = 1048576
-max_price_levels     = 65536
+max_active_orders    = 65536
+max_price_levels     = 16384

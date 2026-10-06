@@ -77,8 +77,49 @@ across `.cpp` files. Keeping parsing, the book and the strategy in headers lets 
 the whole chain from one message to one strategy decision. Only cold code — config
 loading, reporting, the benchmark harness, `main` — sits in `src/`.
 
-<!-- order storage, price level representation and best price maintenance go here
-     once the order book is written -->
+**Orders live in a fixed pool, found through a hash index.** The pool is one array of
+slots sized from `max_active_orders`. Free slots form a linked list whose "next" pointer
+is stored inside the unused slot itself, so taking and returning a slot are both O(1) and
+cost no extra memory. A separate index maps an order id to a slot number.
+
+`std::unordered_map` was the obvious alternative and was rejected on three counts: it
+allocates a node per order, which is per-message allocation; its nodes sit wherever the
+allocator put them, so every lookup is a pointer chase into cold memory; and it rehashes
+when it grows, which is an unpredictable pause in the middle of a feed.
+
+The index is open addressing with linear probing over a power-of-two table kept at most
+half full, so the average lookup touches about one or two buckets. Deletion shifts
+entries back rather than leaving tombstones. Tombstones are simpler, but orders are
+removed constantly here and the graveyard would slowly turn every probe into a scan.
+
+**There is one index per side, but one shared pool.** An order takes a slot whatever side
+it is on, so the pool is shared and the total is bounded by one number. The index has to
+be per side because ITCH order ids are unique per book *and side*: the same id can be
+live on both sides at once, and a single table would call the second one a duplicate.
+
+**Price levels are a dense array indexed by `price - base_price`.** Prices are whole
+kurus with `tick_size` 1, so the level is reached by one subtraction. No search, no
+comparison, nothing reordered. A sorted vector would put the best price at index 0 for
+free, but the dominant operation is order id to price to level, and that would be a
+binary search every time; worse, insert and erase shift indices, so an order could not
+hold on to where its level lives. The sample feed settles the memory question too: the
+target book moved across 3,780 ticks in a day, so the array is small enough to stay in
+cache.
+
+`base_price` is fixed from the first price seen, centred in the band. A price outside the
+band is a safe error rather than a write past the array.
+
+**The two sides are separate arrays.** One array with a side tag per level would halve
+the memory, but inside a timestamp group a price really can be on both sides at once:
+adding the new ask before deleting the old bid is a legal order of events, and a single
+tag cannot represent it.
+
+**Best bid and ask move incrementally.** A new level can only improve the best, so adding
+one costs a single comparison. When the best level empties, the next one is found through
+a bitset with one bit per level: one 64-bit word answers for 64 levels at a time, and
+`__builtin_ctzll` picks the bit out in one instruction. Walking levels one at a time
+would be fine most of the time and occasionally terrible, which is the shape that ruins a
+tail latency.
 
 ## Complexity
 
@@ -99,7 +140,12 @@ and a message costs a fixed number of reads.
 The input file is loaded into memory once, before any timed region. After that the
 protocol layer never allocates: `ByteReader` only holds a pointer and a length, the
 decoded messages are plain structs on the stack, and the counters are fixed fields.
-`std::vector` appears only in the test helpers, never in `include/` or `src/`.
+
+The order pool does allocate, but only in its constructor. It takes
+`max_active_orders` slots and an index table of twice that, both sized once and never
+grown. `std::vector` is used for them because it owns the memory safely, but
+`push_back` is never called on either, so nothing moves and no pointer into the pool
+goes stale. Per-message allocation is what the assignment rules out, not setup.
 
 Errors are return values and counters, never exceptions. The assignment rules out
 exceptions as normal control flow in the hot path, and a bad packet is normal here: it is
@@ -120,8 +166,15 @@ A corrupt side byte is rejected in the parser rather than in the order book. `Si
 used as an array index further down, so this is the last point where a bad value can be
 stopped safely.
 
-<!-- capacity limits (max_active_orders, max_price_levels) go here once the pool
-     and the level array are written -->
+Two limits can be reached, and both stop the strategy instead of damaging anything:
+
+- `max_active_orders` — the pool reports that it is full and the order is not stored.
+  Nothing is overwritten and the orders already there are untouched.
+- `max_price_levels` — a price outside the band is refused. If the order had already
+  gone into the pool it is taken back out, so the pool and the levels never disagree.
+
+Either one latches a flag the strategy checks. The book cannot be trusted after that
+point, so it stops producing orders rather than trading on a book it knows is wrong.
 
 ## Sequence gap behaviour
 
@@ -171,12 +224,22 @@ happens if the capture starts in the middle of the stream. The absolute time is 
 wrong, but ordering inside that stretch still works, so dropping the messages would lose
 more than it saves. They are counted in `before_first_second`.
 
-**`'C'` and `'Y'` are skipped, and this has a cost.** The assignment says to handle only
-four message types. The spec's own "How to Build an Order Book View" section also lists
-`'C'` (Order Executed with Price), which reduces an order's quantity, and `'Y'` (Order
-Book Flush), which clears the book. Skipping them can leave quantities too high or a book
-that should have been emptied. `'U'` (Order Replace) is not used on BIST markets, so it
-costs nothing.
+**`'C'` and `'Y'` are skipped, and on this feed that costs nothing.** The assignment says
+to handle only four message types, but the spec's own "How to Build an Order Book View"
+section also lists `'C'` (Order Executed with Price), which reduces an order's quantity,
+and `'Y'` (Order Book Flush), which clears a book. Both were checked against the sample
+feed:
+
+- `'C'` does not appear at all. Not once, in 15.5 million messages.
+- `'Y'` appears 3,897 times and touches book 73616 four times. None of them can change
+  the result. The first lands while the book is still empty. The second shares its
+  timestamp with `P_MARJ_YAYIN_KAPANIS`, by which point the strategy has already stopped.
+  The other two come after the close.
+
+So skipping them is safe here. It would not be safe in general, and a feed where `'C'`
+was used, or where a flush landed during continuous trading, would need both.
+
+`'U'` (Order Replace) is not used on BIST markets, so it costs nothing either.
 
 **A session change resets sequence tracking and restores trust.** A different session
 name means a different stream with its own numbering, so a low sequence number after a
@@ -189,12 +252,12 @@ and dropped instead of being guessed at.
 bit zero (`INT32_MIN`) means "no price", and in an Add Order it means a market order. Such
 an order has no price level and must not be placed on one.
 
-**How packets are framed inside the input file is not specified anywhere.** The most
-likely layout is one packet after another with nothing between them, because MoldUDP64
-is self-delimiting: a packet is 20 bytes plus the sum of `2 + block length` over its
-blocks. This is kept behind `io/datagram_source.hpp` so that switching to pcap or
-length-prefixed records is a one-file change. This will be confirmed against the sample
-data once it arrives.
+**Packet framing in the file is one packet after another, confirmed.** Nothing is
+specified about this anywhere, so it was checked directly: the file has no pcap or pcapng
+magic number, and walking it as bare MoldUDP64 packets — 20 bytes of header plus the sum
+of `2 + block length` over the blocks — lands exactly on the last byte after 519,492
+packets, with no leftover and no block running past an end. It is still kept behind
+`io/datagram_source.hpp` so a different feed with another layout is a one-file change.
 
 Cash flow and P&L are stored in `int64_t`. The maximum term per fill is
 `order_quantity * price`, so with the configured values (100 lots, an upper bound of
@@ -227,13 +290,47 @@ Both sides of the wire format are tested together. The builder writes bytes and
 separately, the two could still agree on a wrong offset and both look correct on their
 own; only the round trip catches that.
 
+## The sample feed
+
+`itch_data_250815_HI2.dat`, 584 MB, 15 August 2025. One session, `TR29253481`.
+
+| | |
+|---|---|
+| Packets | 519,492 |
+| ITCH messages | 15,560,041 |
+| Order books in the file | 1,769 |
+| Sequence gaps / duplicates | 0 / 0 |
+| Target book 73616 | `EKGYO.E` |
+| Target messages (A / E / D) | 147,637 / 54,409 / 106,146 |
+| Peak live orders in the target book | 4,528 |
+| Price range | 17,060 to 20,840 kurus (3,780 ticks) |
+| Timestamp groups in the target book | 197,449 |
+
+Message types present: `A D E Z P T O L Y R V S`. Four of them are handled, the rest are
+skipped.
+
+The day runs `P_SUREKLI_ISLEM` to `P_MARJ_YAYIN_KAPANIS`, exactly eight hours apart, and
+each state appears once. Most timestamp groups are small — 61% hold a single message and
+37% hold two — but the largest holds 3,919, which is why the strategy must never run in
+the middle of one.
+
+The feed also carries no orders with a zero (undisclosed) quantity and no market-order
+price sentinel in the target book. Both are still handled, since neither is ruled out by
+the protocol.
+
+The capacities in `config.example` are sized from these numbers with more than 10x
+headroom.
+
 ## Known limitations
 
-**The sample data has not been checked yet.** Everything so far is tested against
-synthetic input. The framing inside the file still needs to be confirmed.
+**`'C'` and `'Y'` are not handled.** Verified harmless on this feed, as explained under
+Assumptions, but a feed that used `'C'`, or flushed a book during continuous trading,
+would need both. `'C'` reduces a quantity like `'E'` does, and `'Y'` clears the book, so
+neither is hard to add.
 
-**`'C'` and `'Y'` are not handled**, as explained under Assumptions. With more time these
-would be easy to add: `'C'` reduces a quantity like `'E'`, and `'Y'` clears the book.
+**Only one day of data has been checked.** The capacity numbers above come from a single
+session. A busier day would need larger limits, which is why they are configuration
+rather than constants.
 
 **A gap disables the strategy for the rest of the session.** With a snapshot feed the
 book could be rebuilt and trading could continue, but ITCH alone cannot do that.

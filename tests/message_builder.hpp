@@ -145,14 +145,11 @@ inline Bytes add_order (uint32_t nanos, OrderId id, OrderBookId book, Side side,
 
 }
 
-// ---------------------------------------------------------------- MoldUDP64
 
 inline void put_bytes(Bytes& out, const Bytes& in) {
     out.insert(out.end(), in.begin(), in.end());
 }
 
-// Fills mesCount from the message list. Tests that need a wrong count, a
-// heartbeat or an end-of-session marker overwrite header.mesCount afterwards.
 inline MoldUDP64Packet make_packet(const char* session, uint64_t seq,
                                    const std::vector<Bytes>& msgs) {
     MoldUDP64Packet p;
@@ -163,8 +160,7 @@ inline MoldUDP64Packet make_packet(const char* session, uint64_t seq,
     return p;
 }
 
-// 20-byte header, then one [2-byte length][payload] block per message.
-// mesCount is written as given, so a deliberately wrong count still serializes.
+
 inline Bytes serialize(const MoldUDP64Packet& p) {
     Bytes out;
     put_alpha(out, p.header.session, 10);
@@ -180,9 +176,6 @@ inline Bytes serialize(const MoldUDP64Packet& p) {
     return out;
 }
 
-// ------------------------------------------------- deliberate corruption
-// Build a valid packet, then break exactly one thing. Keeps the normal path
-// clean and makes each test say plainly what it is exercising.
 
 inline void truncate_to(Bytes& wire, std::size_t n) {
     assert(n <= wire.size());
@@ -195,8 +188,6 @@ inline void set_message_count(Bytes& wire, uint16_t n) {
     wire[19] = (uint8_t)( n       & 0xFF);
 }
 
-// Rewrites the declared length of block `index` without touching its payload,
-// so the stated and actual sizes disagree.
 inline void set_block_length(Bytes& wire, std::size_t index, uint16_t len) {
     std::size_t off = 20;
     for (std::size_t i = 0; i < index; ++i) {
