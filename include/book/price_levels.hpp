@@ -24,6 +24,7 @@
 // occasionally, which is exactly the shape that ruins a p99.9.
 
 #include "core/types.hpp"
+#include "book/group_journal.hpp"
 
 #include <cassert>
 #include <vector>
@@ -38,7 +39,7 @@ struct Level {
 class PriceLevels {
 public:
     explicit PriceLevels(std::size_t max_levels)
-        : levels_(), words_((max_levels + 63) / 64),
+        : levels_(), journal_(max_levels), words_((max_levels + 63) / 64),
           max_levels_(max_levels), base_price_(0), have_base_(false),
           out_of_band_(false) {
         assert(max_levels > 0);
@@ -86,12 +87,32 @@ public:
         return i != NO_LEVEL && testBit(side, i);
     }
 
+    // Ends the timestamp group that was running. Everything the journal holds
+    // about it becomes stale; nothing is wiped.
+    void begin_group() { journal_.begin_group(); }
+
+    bool changed_this_group(Price price) const {
+        const std::size_t i = indexOf(price);
+        return i != NO_LEVEL && journal_.changed_this_group(i);
+    }
+    bool flipped_this_group(Price price) const {
+        const std::size_t i = indexOf(price);
+        return i != NO_LEVEL && journal_.flipped(i);
+    }
+    Side side_before_group(Price price) const {
+        const std::size_t i = indexOf(price);
+        if (i == NO_LEVEL || !journal_.changed_this_group(i)) return SIDE_INVALID;
+        return journal_.side_before(i);
+    }
+
     // An order joins this level: quantity grows and the level gains a member.
     bool add_order(Side side, Price price, Quantity qty) {
         if (!have_base_) setBase(price);
 
         const std::size_t i = indexOf(price);
         if (i == NO_LEVEL) { out_of_band_ = true; return false; }
+
+        noteTouch(i, side);
 
         Level& lv = levels_[side][i];
         lv.quantity += qty;
@@ -109,6 +130,8 @@ public:
         const std::size_t i = indexOf(price);
         if (i == NO_LEVEL) { out_of_band_ = true; return; }
 
+        noteTouch(i, side);
+
         Level& lv = levels_[side][i];
         assert(lv.quantity >= qty);
         lv.quantity -= qty;
@@ -118,6 +141,8 @@ public:
     void remove_order(Side side, Price price, Quantity qty) {
         const std::size_t i = indexOf(price);
         if (i == NO_LEVEL) { out_of_band_ = true; return; }
+
+        noteTouch(i, side);
 
         Level& lv = levels_[side][i];
         assert(lv.quantity >= qty);
@@ -139,6 +164,14 @@ private:
     static const std::size_t NO_LEVEL = (std::size_t)-1;
 
     static Level zeroLevel() { Level l; l.quantity = 0; l.order_count = 0; return l; }
+
+    // Called before every change, while the level still holds what it held.
+    // This is the only moment where the price, the side and the pre-change
+    // occupancy are all in hand, which is why the journal lives here rather
+    // than one layer up.
+    void noteTouch(std::size_t i, Side side) {
+        journal_.note(i, side, testBit(SIDE_BUY, i), testBit(SIDE_SELL, i));
+    }
 
     void setBase(Price price) {
         // Centre the band on the first price so the book can move either way.
@@ -217,6 +250,7 @@ private:
     }
 
     std::vector<Level>    levels_[SIDE_COUNT];
+    GroupJournal          journal_;
     std::vector<uint64_t> occupied_[SIDE_COUNT];
     std::size_t           best_[SIDE_COUNT];
     std::size_t           words_;

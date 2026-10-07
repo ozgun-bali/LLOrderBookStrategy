@@ -19,6 +19,8 @@ struct Sink {
                 Quantity qty; Price price; BookState state; };
     std::vector<Ev> ev;
 
+    void on_sequence_reliable(bool) {}
+
     void on_add_order(Timestamp ts, const AddOrderMsg& m) {
         Ev e; e.kind='A'; e.ts=ts; e.id=m.order_id; e.side=m.side;
         e.qty=m.quantity; e.price=m.price; e.state=STATE_UNKNOWN; ev.push_back(e);

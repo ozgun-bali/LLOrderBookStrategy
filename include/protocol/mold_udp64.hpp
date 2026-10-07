@@ -85,7 +85,7 @@ public:
             
             if (have_expected_ && seq > expected_) {
                 ++stats_.sequence_gaps;
-                reliable_ = false;
+                setReliable(false);
                 expected_ = seq;
             }
             return;
@@ -101,7 +101,7 @@ public:
 
         if (seq > expected_) {
             ++stats_.sequence_gaps;
-            reliable_ = false;
+            setReliable(false);
         } else if (end <= expected_) {
             ++stats_.duplicates;            
             return;
@@ -116,6 +116,15 @@ public:
     }
 
 private:
+    // Reliability is pushed, not polled. A gap is noticed while the packet is
+    // being framed, before any of its messages reach the strategy, so telling
+    // the handler at that moment is the only way the strategy sees it in time.
+    void setReliable(bool v) {
+        if (reliable_ == v) return;
+        reliable_ = v;
+        handler_.on_sequence_reliable(v);
+    }
+
     // Returns false when the packet is malformed. Blocks already delivered stay
     // delivered: the damage is in the remainder, not in what was parsed cleanly.
     bool walkBlocks(const ByteReader& r, uint16_t count, std::size_t skip) {
@@ -124,14 +133,14 @@ private:
         for (uint16_t i = 0; i < count; ++i) {
             if (!r.has(off + 2)) {         
                 ++stats_.invalid_packets;
-                reliable_ = false;
+                setReliable(false);
                 return false;
             }
             const uint16_t blockLen = r.be16(off);
 
             if (!r.has(off + 2 + blockLen)) {   // payload runs past the end
                 ++stats_.invalid_packets;
-                reliable_ = false;
+                setReliable(false);
                 return false;
             }
 
@@ -164,7 +173,7 @@ private:
         std::memcpy(session_, s, MOLD_LEN_SESSION);
         have_expected_ = false;
         expected_      = 0;
-        reliable_      = true;
+        setReliable(true);
     }
 
     Handler&  handler_;

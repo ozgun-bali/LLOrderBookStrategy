@@ -15,6 +15,8 @@ struct Recorder {
     struct Seen { uint8_t type; OrderId id; std::size_t len; };
     std::vector<Seen> seen;
 
+    void on_sequence_reliable(bool) {}
+
     void on_message(const ByteReader& m) {
         Seen s;
         s.type = m.u8(0);

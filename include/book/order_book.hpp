@@ -65,6 +65,15 @@ public:
     std::size_t      live_orders() const { return orders_.size(); }
     const BookStats& stats()       const { return stats_; }
 
+    // Timestamp group boundary. The engine calls this once the previous group
+    // has been evaluated; everything the journal recorded for it goes stale.
+    void begin_group() { levels_.begin_group(); }
+
+    // What the current group did to a price, for the strategy's rules 5 and 6.
+    bool changed_this_group(Price p) const { return levels_.changed_this_group(p); }
+    bool flipped_this_group(Price p) const { return levels_.flipped_this_group(p); }
+    Side side_before_group(Price p) const { return levels_.side_before_group(p); }
+
     void add_order(const AddOrderMsg& m) {
         ++stats_.adds;
 

@@ -63,6 +63,13 @@ public:
     // the capture starts mid-stream.
     bool have_second() const { return have_second_; }
 
+    // Passed straight through. The parser has no opinion on sequence health,
+    // but the strategy below it needs to hear about a gap the moment the
+    // framing layer notices one.
+    void on_sequence_reliable(bool reliable) {
+        handler_.on_sequence_reliable(reliable);
+    }
+
     void on_message(const ByteReader& m) {
         if (!m.has(1)) { ++stats_.invalid_messages; return; }
         ++stats_.messages;
