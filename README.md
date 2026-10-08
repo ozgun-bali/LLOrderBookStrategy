@@ -17,10 +17,14 @@ Target toolchain: GCC 8.5.0, C++11, Linux x86-64. No external dependencies.
 
 ```
 ./orderbook --input sample.bin --config config.txt [--orders orders.csv]
+taskset -c 4 ./orderbook --benchmark sample.bin --iterations 50 --config config.txt
 ```
 
-The summary goes to stdout and the orders to a CSV. A benchmark mode is still
-to come.
+The first prints the summary to stdout and writes the orders to a CSV. The
+second replays the data and reports throughput, latency, allocations and the
+checksum. Pin it to a core: without that the scheduler moves the thread
+between cores and the tail picks up cold caches that have nothing to do with
+the code.
 
 ## Results on the sample feed
 
@@ -159,6 +163,39 @@ a bitset with one bit per level: one 64-bit word answers for 64 levels at a time
 would be fine most of the time and occasionally terrible, which is the shape that ruins a
 tail latency.
 
+## Performance
+
+Fifty passes over the 584 MB feed, pinned to one core. Full method and
+environment in [benchmark_report.md](benchmark_report.md).
+
+| | |
+|---|---|
+| Best pass | 0.101 s for 15,560,041 messages |
+| Throughput | 154 M messages/second, 6.5 ns per message |
+| Per-datagram latency | p50 119 ns, p99 459 ns, p99.9 1,039 ns |
+| **Hot-path allocations** | **0** |
+| Peak memory | 577 MB, of which 557 MiB is the input file |
+| Checksum | identical on all fifty passes |
+
+Zero allocations is a measurement rather than a claim: the global
+`operator new` is replaced, so every allocation anywhere in the program is
+counted. The counter is reset once the pipeline is built and read when the
+pass ends.
+
+Most of the throughput is messages being thrown away. 98% of the feed belongs
+to other order books and is rejected after reading the type byte, checking
+the length and comparing one 32-bit field, so the 6.5 ns average is mostly
+the cost of saying no. A target message costs considerably more.
+
+The gap between p50 and p99.9 is where the design shows. The occupancy bitset
+stops the best-price search turning into a scan when a level empties with a
+gap above it, and backward-shift deletion keeps hash probes short however many
+orders have been and gone. Both were chosen for the tail, not the average.
+
+The reported maximum, 8.3 ms, is the hypervisor rather than the code: this
+runs under WSL2 and the host can deschedule the whole guest. Packets are
+uniform at 30 messages each, so there is no large datagram to blame.
+
 ## Complexity
 
 | Step | Time | Space |
@@ -171,7 +208,37 @@ tail latency.
 Nothing in the protocol layer scans or sorts. A packet costs one pass over its blocks,
 and a message costs a fixed number of reads.
 
-<!-- order book and strategy complexity go here -->
+The order book and the layers above it:
+
+| Step | Time | Space |
+|---|---|---|
+| Add an order | O(1) expected | one 24-byte slot |
+| Find an order by id | O(1) expected | none |
+| Remove an order | O(1) expected, plus the probe run it shifts back | none |
+| Add or remove quantity at a level | O(1) | none |
+| Best price, when the level stays occupied | O(1) | none |
+| Best price, after the level empties | O(gap / 64) words of the bitset | none |
+| Mark a level as touched in a group | O(1) | none |
+| Start a new group | O(1) | none |
+| Evaluate the strategy for one level | O(1) | none |
+| Record a fill | O(1) | none |
+
+"Expected" on the hash operations means the probe run is short, which depends on the
+table staying sparse. It is sized at twice `max_active_orders`, so it never passes 50%
+occupancy, and deletion shifts the run back rather than leaving a tombstone, so probe
+runs do not grow over a session however many orders come and go.
+
+The one step that is not constant is finding the next best price after a level empties.
+The occupancy bitset makes it 64 levels per word, so a 1,000-tick gap is 16 words rather
+than 1,000 checks. The alternative, a sorted container, would make every insert
+O(log n) to make this one step cheaper; the gap is rare and inserts are not.
+
+Starting a group is O(1) because of a generation counter: the journal keeps a generation
+number per level and bumps one counter instead of clearing its arrays. A level whose
+generation is stale reads as untouched. Clearing 16,384 entries per side on every
+timestamp change would be the single most expensive thing the engine does.
+
+
 
 ## Allocation, capacity and error handling
 
@@ -338,7 +405,22 @@ used for the simple reason that it falls outside ISO C++11 and raises a warning 
 
 ## Benchmark
 
-See [benchmark_report.md](benchmark_report.md).
+```bash
+taskset -c 4 ./orderbook --benchmark itch_data_250815_HI2.dat --iterations 50 --config config.txt
+```
+
+Five rules decide what the number means:
+
+1. The file is in memory before anything is timed.
+2. One warm-up pass runs unmeasured and is thrown away.
+3. The data is replayed many times, and each pass builds a fresh pipeline.
+4. No file or console output happens inside the timed region.
+5. Each pass produces a checksum, so `-O3` cannot delete the work as dead.
+
+The allocation counter is reset after the pipeline is built and read when the pass ends,
+so it reports what the hot path asked for rather than what setup did.
+
+Full environment, method and results: [benchmark_report.md](benchmark_report.md).
 
 ## Tests
 
@@ -409,5 +491,6 @@ rather than constants.
 **A gap disables the strategy for the rest of the session.** With a snapshot feed the
 book could be rebuilt and trading could continue, but ITCH alone cannot do that.
 
-**Order book, strategy, fill model and P&L are still to be written.** The protocol layer
-below them is complete and tested.
+**Latency numbers come from inside a VM.** Everything was measured under WSL2. The
+median and the useful percentiles are stable, but the far tail belongs to the
+hypervisor, so a bare-metal run would look different past p99.9.
