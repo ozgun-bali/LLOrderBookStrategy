@@ -1,18 +1,27 @@
 # Statech - Low Latency Order Book and Strategy
-# Copy to config.txt and adjust.
 #
-# target_order_book_id and tick_size come from the assignment. The capacities
-# are sized from the sample feed (itch_data_250815_HI2.dat, book 73616 =
-# EKGYO.E): that day peaked at 4,528 live orders and traded between 17,060 and
-# 20,840 kurus, a band of 3,780 ticks. The values below leave well over 10x
-# headroom and still fit comfortably in cache.
-
-target_order_book_id = 73616
-tick_size            = 1
+# These are the values supplied with the assignment.
+#
+# tick_size is 10, not the 1 the assignment PDF shows as an example. Book 73616
+# trades on a 10-kurus grid: every pair of adjacent prices in the feed is 10
+# apart, the spread sits at 10 for 90.8% of continuous trading and at 20 for
+# 8.6%, and that 20 is the single empty step the strategy looks for.
+#
+# minimum_position 0 means no short selling. The SELL size is
+# position - minimum_position, so nothing can be sold that is not already held,
+# and the first order of the day can only be a buy.
+#
+# -1 on a capacity turns that limit off. A fixed-capacity design still has to
+# allocate something, so it falls back to a built-in default: 65,536 orders and
+# 16,384 price levels. The feed's target book peaked at 4,528 live orders across
+# a 3,780 tick band, so both leave more than ten times the room needed.
 
 order_quantity       = 100
-minimum_position     = -1000
+minimum_position     = 0
 maximum_position     = 1000
 
-max_active_orders    = 65536
-max_price_levels     = 16384
+tick_size            = 10
+target_order_book_id = 73616
+
+max_active_orders    = -1
+max_price_levels     = -1

@@ -16,9 +16,47 @@ Target toolchain: GCC 8.5.0, C++11, Linux x86-64. No external dependencies.
 ## Run
 
 ```
-./orderbook --input sample.bin --config config.txt
-./orderbook --benchmark sample.bin --iterations 100
+./orderbook --input sample.bin --config config.txt [--orders orders.csv]
 ```
+
+The summary goes to stdout and the orders to a CSV. A benchmark mode is still
+to come.
+
+## Results on the sample feed
+
+`itch_data_250815_HI2.dat` with the supplied configuration, 584 MB in about
+three seconds:
+
+```
+final_position          = 300
+cash_flow               = -6157000
+final_pnl               = -409000
+last_execution_price    = 19150
+end_of_day_mark_price   = 19160
+generated_order_count   = 1491          (747 buy, 744 sell)
+checksum                = 0x45F146A704E0878C
+```
+
+The P&L reconciles: `-6,157,000 + 300 x 19,160 = -409,000`. The mark uses the
+price at the close, not the last price in the file, which is why both are
+printed.
+
+Where the 197,463 evaluations went:
+
+| Outcome | Count |
+|---|---|
+| spread was not two ticks | 179,951 |
+| gap was not opened by that group | 15,532 |
+| position limit left no room | 380 |
+| outside continuous trading | 109 |
+| **order sent** | **1,491** |
+
+Running it twice gives byte-identical output, summary and CSV.
+
+**The strategy loses money on this day.** That is what the fill model implies
+rather than a bug: every order is treated as filled, while in a real market the
+orders that fill are disproportionately the ones you would rather had not. See
+Known limitations.
 
 ## Architecture
 
@@ -248,6 +286,35 @@ change is not a duplicate, and a gap from the old stream no longer applies.
 **A side byte that is not `B` or `S` makes the message invalid.** The message is counted
 and dropped instead of being guessed at.
 
+**`tick_size` is 10, not the 1 the assignment shows.** The assignment's example
+config says 1, and with that value no spread is ever exactly two ticks and the
+strategy never fires. Book 73616 trades on a 10-kurus grid: every pair of
+adjacent prices in the feed is 10 apart, and the spread sits at 10 for 90.8% of
+continuous trading and at 20 for 8.6%. That 20 is the single empty step. The
+configuration supplied with the data later confirmed 10.
+
+**`minimum_position` is 0, so nothing is sold short.** The sell size is
+`position - minimum_position`, which with a floor of zero means only what is
+already held can be sold. The first order of the day is therefore always a buy.
+A side effect: every order comes out at the full 100 lots, because fills only
+ever move the position in steps of 100, so the room left is either zero or at
+least 100 and the partial sizing never triggers.
+
+**A capacity of -1 switches that limit off, but something still has to be
+allocated.** A fixed-capacity design cannot have no capacity, so -1 selects a
+built-in default: 65,536 orders and 16,384 price levels. The feed's target book
+peaked at 4,528 live orders across a 3,780 tick band, so both leave more than
+ten times the room needed. Growing the structures instead was rejected: it
+would put allocation back on the hot path, which is the one thing the
+assignment rules out. Exceeding the default is still a safe error, because
+there is no honest alternative, but it is no longer the configured limit being
+reached.
+
+**The day is valued when `P_MARJ_YAYIN_KAPANIS` arrives, not at end of file.**
+The feed keeps trading after the close - closing auction, more executions - and
+the last traded price drifts. On this day it was 19,160 at the close and 19,150
+by the end of the file.
+
 **Price uses the sentinel from the spec.** A Price field with bit 31 set and every other
 bit zero (`INT32_MIN`) means "no price", and in an Add Order it means a market order. Such
 an order has no price level and must not be placed on one.
@@ -327,6 +394,13 @@ headroom.
 Assumptions, but a feed that used `'C'`, or flushed a book during continuous trading,
 would need both. `'C'` reduces a quantity like `'E'` does, and `'Y'` clears the book, so
 neither is hard to add.
+
+**The fill model is optimistic, and the P&L should be read that way.** Every
+generated order is treated as filled in full at its own price. In a real market
+placing an order into a gap buys you queue position, not a trade: some orders
+never fill, and the ones that do are disproportionately the ones filled by
+whoever is pushing the price away from you. The number this produces is closer
+to an upper bound than to an estimate.
 
 **Only one day of data has been checked.** The capacity numbers above come from a single
 session. A busier day would need larger limits, which is why they are configuration

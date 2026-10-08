@@ -113,19 +113,30 @@ bool parse_config(const std::string& text, Config& out, std::string& error) {
             seenMax = true;
 
         } else if (key == "max_active_orders") {
-            if (v <= 0) {
-                error = atLine(lineNo, "max_active_orders must be positive");
+            // -1 switches the limit off. Anything else has to be a usable size.
+            if (v == -1) {
+                cfg.max_active_orders = DEFAULT_MAX_ACTIVE_ORDERS;
+                cfg.orders_limited    = false;
+            } else if (v <= 0) {
+                error = atLine(lineNo, "max_active_orders must be positive or -1");
                 return false;
+            } else {
+                cfg.max_active_orders = (std::size_t)v;
+                cfg.orders_limited    = true;
             }
-            cfg.max_active_orders = (std::size_t)v;
             seenOrders = true;
 
         } else if (key == "max_price_levels") {
-            if (v <= 0) {
-                error = atLine(lineNo, "max_price_levels must be positive");
+            if (v == -1) {
+                cfg.max_price_levels = DEFAULT_MAX_PRICE_LEVELS;
+                cfg.levels_limited   = false;
+            } else if (v <= 0) {
+                error = atLine(lineNo, "max_price_levels must be positive or -1");
                 return false;
+            } else {
+                cfg.max_price_levels = (std::size_t)v;
+                cfg.levels_limited   = true;
             }
-            cfg.max_price_levels = (std::size_t)v;
             seenLevels = true;
 
         } else {

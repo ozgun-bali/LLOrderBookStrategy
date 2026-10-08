@@ -98,6 +98,78 @@ TEST(config_rejects_a_line_without_an_equals_sign) {
   CHECK(err.find("key = value") != std::string::npos);
 }
 
+TEST(config_reads_the_file_shipped_with_the_assignment) {
+  // Exactly as supplied, including the -1 capacities and the blank lines.
+  Config c; std::string err;
+  const char* text =
+      "order_quantity       = 100\n"
+      "\n"
+      "minimum_position     = 0\n"
+      "\n"
+      "maximum_position     = 1000\n"
+      "\n"
+      "tick_size            = 10\n"
+      "\n"
+      "target_order_book_id = 73616\n"
+      "\n"
+      "max_active_orders    = -1\n"
+      "\n"
+      "max_price_levels     = -1\n";
+
+  REQUIRE(parse_config(text, c, err));
+  CHECK_EQ(c.order_quantity, 100ull);
+  CHECK_EQ(c.minimum_position, 0);        // no short selling
+  CHECK_EQ(c.maximum_position, 1000);
+  CHECK_EQ(c.tick_size, 10);              // not the 1 the PDF shows
+  CHECK_EQ(c.target_order_book_id, 73616u);
+}
+
+TEST(config_minus_one_turns_a_capacity_limit_off) {
+  // The limit goes away, but a fixed-capacity design still has to allocate
+  // something, so a documented default takes over.
+  Config c; std::string err;
+  const char* text =
+      "target_order_book_id = 73616\n"
+      "tick_size = 10\n"
+      "order_quantity = 100\n"
+      "minimum_position = 0\n"
+      "maximum_position = 1000\n"
+      "max_active_orders = -1\n"
+      "max_price_levels = -1\n";
+
+  REQUIRE(parse_config(text, c, err));
+  CHECK(!c.orders_limited);
+  CHECK(!c.levels_limited);
+  CHECK_EQ(c.max_active_orders, DEFAULT_MAX_ACTIVE_ORDERS);
+  CHECK_EQ(c.max_price_levels, DEFAULT_MAX_PRICE_LEVELS);
+}
+
+TEST(config_an_explicit_capacity_still_counts_as_a_limit) {
+  Config c; std::string err;
+  const char* text =
+      "target_order_book_id = 73616\n"
+      "tick_size = 10\n"
+      "order_quantity = 100\n"
+      "minimum_position = 0\n"
+      "maximum_position = 1000\n"
+      "max_active_orders = 500\n"
+      "max_price_levels = 256\n";
+
+  REQUIRE(parse_config(text, c, err));
+  CHECK(c.orders_limited);
+  CHECK(c.levels_limited);
+  CHECK_EQ(c.max_active_orders, 500u);
+  CHECK_EQ(c.max_price_levels, 256u);
+}
+
+TEST(config_still_rejects_other_non_positive_capacities) {
+  // -1 is the one special value. -2 or 0 are simply unusable.
+  Config c; std::string err;
+  CHECK(!parse_config("max_active_orders = 0\n", c, err));
+  CHECK(!parse_config("max_active_orders = -2\n", c, err));
+  CHECK(!parse_config("max_price_levels = -5\n", c, err));
+}
+
 TEST(config_rejects_values_that_cannot_work) {
   Config c; std::string err;
 
