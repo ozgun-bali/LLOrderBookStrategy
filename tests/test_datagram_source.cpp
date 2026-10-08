@@ -11,15 +11,6 @@ namespace {
 
 Bytes del(OrderId id) { return deleted(1u, id, 73616u, SIDE_BUY); }
 
-// Glues packets together exactly the way the feed file does: nothing between
-// them, no index, no length prefix.
-Bytes glue(const std::vector<Bytes>& packets) {
-    Bytes all;
-    for (std::size_t i = 0; i < packets.size(); ++i)
-        all.insert(all.end(), packets[i].begin(), packets[i].end());
-    return all;
-}
-
 } // namespace
 
 TEST(source_finds_the_boundary_between_glued_packets) {

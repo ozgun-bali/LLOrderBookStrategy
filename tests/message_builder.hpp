@@ -200,8 +200,50 @@ inline void set_block_length(Bytes& wire, std::size_t index, uint16_t len) {
     wire[off + 1] = (uint8_t)( len       & 0xFF);
 }
 
+// Glues packets together exactly the way the feed file does: nothing between
+// them, no index, no length prefix. The boundary has to be recomputed from the
+// block lengths, which is what DatagramSource is for.
+inline Bytes glue(const std::vector<Bytes>& packets) {
+    Bytes all;
+    for (std::size_t i = 0; i < packets.size(); ++i)
+        all.insert(all.end(), packets[i].begin(), packets[i].end());
+    return all;
+}
 
-// TODO
+// Builds a whole feed, keeping the sequence number for you.
+//
+// MoldUDP64 counts messages, not packets, so the next packet's sequence is this
+// one's plus its message count. Getting that wrong by hand is the easiest way to
+// write a test that passes for the wrong reason.
+struct Feed {
+    Bytes    wire;
+    uint64_t seq;
+    const char* session;
+
+    explicit Feed(const char* s = "TESTSESS01") : seq(1), session(s) {}
+
+    // One packet carrying these messages, in order.
+    void packet(const std::vector<Bytes>& messages) {
+        append(serialize(make_packet(session, seq, messages)));
+        seq += messages.size();
+    }
+
+    // A packet with no blocks. Its sequence is the next one expected, so it
+    // announces the stream is alive without carrying anything.
+    void heartbeat() { append(serialize(make_packet(session, seq, {}))); }
+
+    // The end of session marker: a bare header whose count is 0xFFFF.
+    void end_of_session() {
+        Bytes p = serialize(make_packet(session, seq, {}));
+        set_message_count(p, 0xFFFF);
+        append(p);
+    }
+
+    // Pretends n messages never arrived, which is how a gap is made.
+    void lose(uint64_t n) { seq += n; }
+
+    void append(const Bytes& b) { wire.insert(wire.end(), b.begin(), b.end()); }
+};
 
 } // namespace llobtest
 

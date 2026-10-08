@@ -439,6 +439,37 @@ Both sides of the wire format are tested together. The builder writes bytes and
 separately, the two could still agree on a wrong offset and both look correct on their
 own; only the round trip catches that.
 
+216 tests, in two layers. Most of them check one component against its own interface.
+On top of those, `test_protocol.cpp`, `test_strategy.cpp` and `test_pnl.cpp` build a
+feed out of wire bytes and run it through the whole assembled program, reading the
+result out of the reported summary. A component can be correct on its own and still be
+wired up wrongly: a counter read from the wrong object, a handler never reached, a limit
+applied to the wrong number. Only a run through the whole chain catches that.
+
+The scenarios the assignment asks for, and where each one is checked end to end:
+
+| Scenario | Test |
+|---|---|
+| Truncated header | `protocol_a_truncated_header_stops_the_walk_and_is_reported` |
+| Invalid message length | `protocol_a_message_shorter_than_its_type_is_counted_and_skipped` |
+| Sequence gap | `protocol_a_sequence_gap_is_counted_and_silences_the_strategy` |
+| Heartbeat | `protocol_a_heartbeat_carries_nothing_and_breaks_nothing` |
+| End of session | `protocol_end_of_session_is_a_bare_header_and_frames_correctly` |
+| Non-target order book | `protocol_another_order_book_never_reaches_the_engine` |
+| Transient gap in one group | `strategy_e2e_a_gap_that_opens_and_closes_in_one_group_is_not_a_signal` |
+| Real BUY gap | `strategy_e2e_a_bid_that_vanishes_produces_one_buy` |
+| Real SELL gap | `strategy_e2e_an_ask_that_vanishes_produces_one_sell` |
+| Repeated signal suppressed | `strategy_e2e_one_order_per_gap_however_long_it_stays_open` |
+| Quantity cut near the limit | `pnl_e2e_the_quantity_is_cut_down_to_what_the_limit_allows` |
+| No order at the limit | `pnl_e2e_nothing_is_sent_when_there_is_no_room_left` |
+| BUY cash flow | `pnl_e2e_a_buy_pays_out_and_goes_long` |
+| SELL cash flow | `pnl_e2e_a_sell_takes_in_cash_and_goes_short` |
+| End of day mark to market | `pnl_e2e_the_day_is_marked_at_the_closing_price` |
+
+Each of these is also checked against the component that implements it, in
+`test_mold_udp64.cpp`, `test_itch_parser.cpp`, `test_gap_strategy.cpp` and
+`test_position.cpp`.
+
 ## The sample feed
 
 `itch_data_250815_HI2.dat`, 584 MB, 15 August 2025. One session, `TR29253481`.

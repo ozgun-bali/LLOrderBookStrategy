@@ -5,18 +5,18 @@ with the configuration supplied alongside it.
 
 ## Environment
 
-| | |
-|---|---|
-| CPU | AMD Ryzen 7 7800X3D, 8 cores / 16 threads |
-| TSC rate | 4.2000 GHz (measured by calibration) |
-| CPU pinning | `taskset -c 4`, one core for the whole run |
-| OS | AlmaLinux 8.10 on WSL2, kernel 6.18.40.1-microsoft-standard-WSL2 |
-| Compiler | GCC 8.5.0 |
-| Flags | `-std=c++11 -O3 -DNDEBUG -Wall -Wextra -Wpedantic` |
-| Timing, whole pass | `std::chrono::steady_clock` |
-| Timing, per datagram | `rdtsc`, 0.238 ns per cycle |
-| Warm-up | one full unmeasured pass before the first measurement |
-| Iterations | 50 |
+|                      |                                                                  |
+| -------------------- | ---------------------------------------------------------------- |
+| CPU                  | AMD Ryzen 7 7800X3D, 8 cores / 16 threads                        |
+| TSC rate             | 4.2000 GHz (measured by calibration)                             |
+| CPU pinning          | `taskset -c 4`, one core for the whole run                       |
+| OS                   | AlmaLinux 8.10 on WSL2, kernel 6.18.40.1-microsoft-standard-WSL2 |
+| Compiler             | GCC 8.5.0                                                        |
+| Flags                | `-std=c++11 -O3 -DNDEBUG -Wall -Wextra -Wpedantic`               |
+| Timing, whole pass   | `std::chrono::steady_clock`                                      |
+| Timing, per datagram | `rdtsc`, 0.238 ns per cycle                                      |
+| Warm-up              | one full unmeasured pass before the first measurement            |
+| Iterations           | 50                                                               |
 
 **This is a virtual machine.** WSL2 runs under a Hyper-V hypervisor, so the
 Windows host can deschedule the whole guest regardless of pinning. That does
@@ -64,29 +64,29 @@ above the sampled mean (154 ns).
 
 ## Results
 
-| Category | Metric | Value |
-|---|---|---|
-| Volume | Packets | 519,492 |
-| | ITCH messages | 15,560,041 |
-| | Target messages | 308,209 |
-| | Order intents | 1,491 |
-| Throughput | Total time, 50 passes | 5.277 s |
-| | Best pass | 0.101 s |
-| | Worst pass | 0.144 s |
-| | Messages per second | 154.4 M |
-| | Average ns per message | 6.5 |
-| Latency, per datagram | p50 | 119 ns |
-| | p90 | 209 ns |
-| | p99 | 459 ns |
-| | p99.9 | 1,039 ns |
-| | Maximum | 8,306,725 ns |
-| | Mean | 154 ns |
-| | Samples | 3,246,800 |
-| Resources | Hot-path allocations | **0** |
-| | Hot-path bytes | **0** |
-| | Peak memory | 577,420 kB |
-| Validation | Checksum | `0x45F146A704E0878C` |
-| | Stable across all 50 passes | yes |
+| Category              | Metric                      | Value                |
+| --------------------- | --------------------------- | -------------------- |
+| Volume                | Packets                     | 519,492              |
+|                       | ITCH messages               | 15,560,041           |
+|                       | Target messages             | 308,209              |
+|                       | Order intents               | 1,491                |
+| Throughput            | Total time, 50 passes       | 5.277 s              |
+|                       | Best pass                   | 0.101 s              |
+|                       | Worst pass                  | 0.144 s              |
+|                       | Messages per second         | 154.4 M              |
+|                       | Average ns per message      | 6.5                  |
+| Latency, per datagram | p50                         | 119 ns               |
+|                       | p90                         | 209 ns               |
+|                       | p99                         | 459 ns               |
+|                       | p99.9                       | 1,039 ns             |
+|                       | Maximum                     | 8,306,725 ns         |
+|                       | Mean                        | 154 ns               |
+|                       | Samples                     | 3,246,800            |
+| Resources             | Hot-path allocations        | **0**                |
+|                       | Hot-path bytes              | **0**                |
+|                       | Peak memory                 | 577,420 kB           |
+| Validation            | Checksum                    | `0x45F146A704E0878C` |
+|                       | Stable across all 50 passes | yes                  |
 
 Per message, dividing the datagram figures by 30: about 4 ns at the median and
 35 ns at p99.9.
