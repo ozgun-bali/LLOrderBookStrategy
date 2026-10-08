@@ -23,8 +23,8 @@ TEST(position_a_sell_takes_in_cash_and_goes_short) {
   PositionTracker p;
   p.apply_fill(SIDE_SELL, 1050, 100);
 
-  CHECK_EQ(p.quantity(), -100);          // sold what we did not hold
-  CHECK_EQ(p.cash_flow(), 105000);       // 100 x 1050 came in
+  CHECK_EQ(p.quantity(), -100);          // elimizde olmayanı sattık
+  CHECK_EQ(p.cash_flow(), 105000);       // 100 x 1050 içeri girdi
   CHECK_EQ(p.fills(), 1ull);
 }
 
@@ -37,8 +37,8 @@ TEST(position_a_buy_pays_out_and_goes_long) {
 }
 
 TEST(position_a_round_trip_leaves_the_profit_in_the_cash_flow) {
-  // Sell high, buy back lower. The position returns to zero and the two ticks
-  // of edge are the only thing left.
+  // Yüksekten sat, düşükten geri al. Position sıfıra dönüyor ve geriye sadece
+  // iki tick'lik kazanç kalıyor.
   PositionTracker p;
   p.apply_fill(SIDE_SELL, 1050, 100);
   p.apply_fill(SIDE_BUY,  1048, 100);
@@ -74,23 +74,23 @@ TEST(position_marks_a_long_at_the_closing_price) {
   p.apply_fill(SIDE_BUY, 1050, 100);     // cash -105000, position +100
   p.mark_end_of_day(true, 1048);
 
-  CHECK_EQ(p.final_pnl(), -200);         // bought at 1050, market closed at 1048
+  CHECK_EQ(p.final_pnl(), -200);         // 1050'den alındı, piyasa 1048'de kapandı
 }
 
 TEST(position_flat_at_the_close_needs_no_price) {
   PositionTracker p;
   p.apply_fill(SIDE_SELL, 1050, 100);
   p.apply_fill(SIDE_BUY,  1048, 100);
-  p.mark_end_of_day(false, 0);           // nothing ever traded on the feed
+  p.mark_end_of_day(false, 0);           // feed'de hiç işlem olmadı
 
-  CHECK(p.pnl_known());                  // nothing to value, so the cash is it
+  CHECK(p.pnl_known());                  // değerlenecek bir şey yok, sonuç cash
   CHECK_EQ(p.final_pnl(), 200);
   CHECK(!p.have_mark_price());
 }
 
 TEST(position_open_with_no_traded_price_reports_no_pnl) {
-  // Documented policy: an open position and nothing to value it at has no
-  // honest answer, so none is given rather than inventing one.
+  // Dokümante edilmiş politika: açık bir position ve onu değerleyecek hiçbir şey
+  // yoksa dürüst bir cevap da yoktur; uydurmak yerine hiçbiri verilmiyor.
   PositionTracker p;
   p.apply_fill(SIDE_SELL, 1050, 100);
   p.mark_end_of_day(false, 0);
@@ -101,22 +101,22 @@ TEST(position_open_with_no_traded_price_reports_no_pnl) {
 }
 
 TEST(position_marks_the_day_only_once) {
-  // The close arrives once. Anything after it must not re-value the day at a
-  // price the close never saw.
+  // Kapanış bir kez geliyor. Sonrasındaki hiçbir şey, günü kapanışın hiç
+  // görmediği bir price'tan yeniden değerlememeli.
   PositionTracker p;
   p.apply_fill(SIDE_SELL, 1050, 100);
 
   p.mark_end_of_day(true, 1048);
   CHECK_EQ(p.final_pnl(), 200);
 
-  p.mark_end_of_day(true, 900);          // a later, much lower print
-  CHECK_EQ(p.final_pnl(), 200);          // unchanged
+  p.mark_end_of_day(true, 900);          // daha sonraki, çok daha düşük bir işlem
+  CHECK_EQ(p.final_pnl(), 200);          // değişmedi
   CHECK_EQ(p.mark_price(), 1048);
 }
 
 TEST(position_handles_a_large_notional_without_wrapping) {
-  // Quantity is unsigned and Price is signed; multiplying them unwidened would
-  // promote the price and a big product would land somewhere absurd.
+  // Quantity unsigned, Price signed; genişletmeden çarpmak price'ı promote eder
+  // ve büyük bir çarpım saçma bir yere düşerdi.
   PositionTracker p;
   p.apply_fill(SIDE_BUY, 2000000, 1000000);
 
@@ -138,8 +138,8 @@ TEST(fill_simulator_moves_the_position_and_counts) {
 }
 
 TEST(position_ref_stays_live_as_fills_arrive) {
-  // The engine binds this once and reads it every group, so it has to follow
-  // the tracker rather than snapshot it.
+  // Engine bunu bir kez bağlıyor ve her group'ta okuyor, yani tracker'ın
+  // anlık kopyasını değil kendisini takip etmek zorunda.
   PositionTracker p;
   const Position& live = p.position_ref();
   CHECK_EQ(live, 0);

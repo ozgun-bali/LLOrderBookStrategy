@@ -10,26 +10,27 @@
 #include "core/types.hpp"  
 
 
-// Builds synthetic MoldUDP64 packets and ITCH messages for tests.
+// Testler için sentetik MoldUDP64 packet'leri ve ITCH message'ları üretiyor.
 //
-// Worth writing first: it is the only way to exercise sequence gaps, truncated
-// headers, invalid lengths, heartbeats, end of session and non-target books
-// deterministically. It also unblocks everything if the sample data arrives late.
+// İlk yazılmaya değer parça: sequence gap'leri, kesik header'ları, geçersiz
+// length'leri, heartbeat'leri, end of session'ı ve hedef dışı book'ları
+// deterministik olarak denemenin tek yolu bu. Ayrıca sample data geç gelirse
+// her şeyin önünü açıyor.
 //
-// Should be able to emit: a 'T' seconds message, Add / Executed / Delete / state
-// messages with chosen timestamps, and to wrap any set of messages into a packet
-// with a chosen session, sequence number and message count - including
-// deliberately malformed ones.
+// Üretebilmesi gerekenler: bir 'T' seconds message'ı, seçilen timestamp'lerle
+// Add / Executed / Delete / state message'ları, ve herhangi bir message
+// kümesini seçilen session, sequence number ve message count ile bir packet'e
+// sarmak - bilerek bozulmuş olanlar dahil.
 namespace llobtest {
 
 using namespace llob;
-//DUMMY VALUES FOR NON USED FIELDS in ADD_ORDER
+//ADD_ORDER'DA KULLANILMAYAN FIELD'LAR ICIN DUMMY DEGERLER
 #define RANKSEQ 0xD1D1D1D1 
 #define RANKINGTIME 0xD1D1D1D1D1D1D1D1
 
 typedef std::vector<uint8_t> Bytes;
 
-struct PacketHeader{ // MoldUDP64 Header struct
+struct PacketHeader{ // MoldUDP64 header struct'ı
   const char* session;
   uint64_t seqNo;
   uint16_t mesCount;
@@ -200,9 +201,9 @@ inline void set_block_length(Bytes& wire, std::size_t index, uint16_t len) {
     wire[off + 1] = (uint8_t)( len       & 0xFF);
 }
 
-// Glues packets together exactly the way the feed file does: nothing between
-// them, no index, no length prefix. The boundary has to be recomputed from the
-// block lengths, which is what DatagramSource is for.
+// Packet'leri tam olarak feed dosyasının yaptığı gibi yapıştırıyor: aralarında
+// hiçbir şey yok, index yok, length prefix'i yok. Sınırın block length'lerinden
+// yeniden hesaplanması gerekiyor - DatagramSource tam olarak bunun için var.
 inline Bytes glue(const std::vector<Bytes>& packets) {
     Bytes all;
     for (std::size_t i = 0; i < packets.size(); ++i)
@@ -210,11 +211,11 @@ inline Bytes glue(const std::vector<Bytes>& packets) {
     return all;
 }
 
-// Builds a whole feed, keeping the sequence number for you.
+// Bütün bir feed kuruyor, sequence number'ı senin yerine tutarak.
 //
-// MoldUDP64 counts messages, not packets, so the next packet's sequence is this
-// one's plus its message count. Getting that wrong by hand is the easiest way to
-// write a test that passes for the wrong reason.
+// MoldUDP64 packet değil message sayıyor, yani bir sonraki packet'in sequence'i
+// bu packet'inki artı içindeki message sayısı. Bunu elle yanlış hesaplamak,
+// yanlış sebepten geçen bir test yazmanın en kolay yolu.
 struct Feed {
     Bytes    wire;
     uint64_t seq;
@@ -222,24 +223,24 @@ struct Feed {
 
     explicit Feed(const char* s = "TESTSESS01") : seq(1), session(s) {}
 
-    // One packet carrying these messages, in order.
+    // Bu message'ları sırayla taşıyan tek bir packet.
     void packet(const std::vector<Bytes>& messages) {
         append(serialize(make_packet(session, seq, messages)));
         seq += messages.size();
     }
 
-    // A packet with no blocks. Its sequence is the next one expected, so it
-    // announces the stream is alive without carrying anything.
+    // Hiç block'u olmayan bir packet. Sequence'i beklenen bir sonraki, yani
+    // hiçbir şey taşımadan stream'in canlı olduğunu duyuruyor.
     void heartbeat() { append(serialize(make_packet(session, seq, {}))); }
 
-    // The end of session marker: a bare header whose count is 0xFFFF.
+    // End of session marker'ı: count'u 0xFFFF olan çıplak bir header.
     void end_of_session() {
         Bytes p = serialize(make_packet(session, seq, {}));
         set_message_count(p, 0xFFFF);
         append(p);
     }
 
-    // Pretends n messages never arrived, which is how a gap is made.
+    // n message hiç gelmemiş gibi yapıyor; bir sequence gap böyle üretiliyor.
     void lose(uint64_t n) { seq += n; }
 
     void append(const Bytes& b) { wire.insert(wire.end(), b.begin(), b.end()); }

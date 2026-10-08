@@ -5,17 +5,17 @@
 //
 //   datagram -> MoldUDP64 -> ItchParser -> Engine -> OrderBook
 //                                             |
-//                                             +-> GapStrategy, group başına bir kez
+//                                             +-> GapStrategy, grup başına bir kez
 //
 // Aynı ITCH timestamp'ini paylaşan message'lar, borsa açısından tek bir olay.
 // Strategy'yi aralarında çalıştırmak ona hiç var olmamış book'lar gösterirdi:
-// sample data'da en büyük group 3.919 message taşıyor ve book onun içinde
+// sample data'da en büyük grup 3.919 message taşıyor ve book onun içinde
 // defalarca cross olup düzeliyor.
 //
-// Bu yüzden strategy sadece kapanmış bir group üzerinde çalışıyor, ve bir group
-// farklı bir timestamp taşıyan bir message geldiğinde kapanıyor - o message
-// uygulanmadan ÖNCE, yoksa bitirdiği group'un içine sızardı. Son group'un
-// arkasında böyle bir message yok; finalize() tam olarak bunun için var.
+// Stratejimiz sadece kapanmış bir grup üzerinde , yeni bir gruba geçmeden hemen önce oluşuyor
+// diğer türlü diğer grubun ilk mesajı da stratejimizin içine girerdi ve bu sonuçlarımızda
+// problem yaratabilirdi.
+// Son grubun  arkasında böyle bir message yok; finalize() tam olarak bunun için var.
 
 #include "core/types.hpp"
 #include "book/order_book.hpp"
@@ -24,9 +24,9 @@
 namespace llob {
 
 struct EngineStats {
-    uint64_t groups;            // tamamlanmış timestamp group'ları
+    uint64_t groups;            // tamamlanmış timestamp grupları
     uint64_t messages;          // uygulanan target book message'ları
-    uint64_t invariant_breaks;  // var olamayacak bir book'la biten group'lar
+    uint64_t invariant_breaks;  // var olamayacak bir book'la biten gruplar
 
     EngineStats() : groups(0), messages(0), invariant_breaks(0) {}
 };
@@ -34,8 +34,7 @@ struct EngineStats {
 template <typename Strategy>
 class Engine {
 public:
-    // Position okunuyor, asla yazılmıyor: sahibi her kimse - bundan sonrası için
-    // bir fill simulator - onu group'lar arasında güncelliyor.
+    // Position okunuyor, asla yazılmıyor: fill simulator onu gruplar arasında güncelliyor.
     Engine(OrderBook& book, Strategy& strategy, const Position& position)
         : book_(book), strategy_(strategy), position_(position),
           current_ts_(0), have_ts_(false), sequence_ok_(true) {}
@@ -65,15 +64,15 @@ public:
     }
 
     // State değişikliği de diğer her message gibi bir timestamp taşıyor, yani o da
-    // kendinden önceki group'u kapatıyor.
+    // kendinden önceki grubu kapatıyor.
     void on_book_state(Timestamp ts, const BookStateMsg& m) {
         closeGroupIfTimestampChanged(ts);
         ++stats_.messages;
         book_.book_state(m);
     }
 
-    // Input'un sonu. Son group hâlâ açık ve onu kapatacak bir şey gelmeyecek, o
-    // yüzden burada değerlendiriliyor. Unutulması kolay, ve unutmak son group'un
+    // Input'un sonu. Son grup hâlâ açık ve onu kapatacak bir şey gelmeyecek, o
+    // yüzden burada değerlendiriliyor. Unutulması kolay, ve unutmak son grubun
     // taşıdığı signal'i sessizce düşürüyor.
     void finalize() {
         if (!have_ts_) return;
@@ -90,14 +89,14 @@ private:
     }
 
     void closeGroup() {
-        // Her message'dan sonra değil burada kontrol ediliyor: bir group'un
+        // Her message'dan sonra değil burada kontrol ediliyor: bir grubun
         // içinde book meşru şekilde cross olabiliyor, çünkü eski bid'i silmek ve
         // yeni ask'i eklemek iki ayrı message.
         if (!book_.invariants_hold()) ++stats_.invariant_breaks;
 
         strategy_.evaluate(book_, sequence_ok_, position_, current_ts_);
 
-        // Journal group'u ancak şimdi unutuyor - strategy kaydettiklerini
+        // Journal grubu ancak şimdi unutuyor - strategy kaydettiklerini
         // okuduktan sonra.
         book_.begin_group();
         ++stats_.groups;

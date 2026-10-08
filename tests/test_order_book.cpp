@@ -66,14 +66,14 @@ TEST(book_partial_execution_keeps_the_order_on_the_level) {
   b.order_executed(exec(1, SIDE_BUY, 200));
 
   CHECK_EQ(b.quantity_at(SIDE_BUY, 1049), 600ull);
-  CHECK_EQ(b.order_count_at(SIDE_BUY, 1049), 2u);   // order 1 is still resting
+  CHECK_EQ(b.order_count_at(SIDE_BUY, 1049), 2u);   // order 1 hâlâ bekliyor
   CHECK_EQ(b.live_orders(), 2);
   CHECK_EQ(b.stats().partial_executions, 1ull);
 }
 
 TEST(book_full_execution_removes_the_order_without_a_delete) {
-  // No Order Delete follows a complete fill. If the book waited for one it
-  // would keep a ghost order forever.
+  // Tam bir fill'in ardından Order Delete gelmiyor. Book onu bekleseydi sonsuza
+  // kadar hayalet bir order tutardı.
   OrderBook b(smallConfig());
   b.add_order(add(1, SIDE_BUY, 500, 1049));
   b.add_order(add(2, SIDE_BUY, 300, 1049));
@@ -100,7 +100,7 @@ TEST(book_execution_in_two_steps_ends_with_the_order_gone) {
 }
 
 TEST(book_last_execution_price_comes_from_the_resting_order) {
-  // The Order Executed message carries no price of its own.
+  // Order Executed message'ı kendi price'ını taşımıyor.
   OrderBook b(smallConfig());
   CHECK(!b.has_last_execution());
 
@@ -148,7 +148,7 @@ TEST(book_keeps_both_sides_and_their_bests) {
 }
 
 TEST(book_allows_the_same_order_id_on_both_sides) {
-  // ITCH ids are unique per book and side only.
+  // ITCH id'leri sadece book ve side bazında unique.
   OrderBook b(smallConfig());
   b.add_order(add(7, SIDE_BUY,  500, 1049));
   b.add_order(add(7, SIDE_SELL, 300, 1051));
@@ -166,13 +166,13 @@ TEST(book_allows_the_same_order_id_on_both_sides) {
 TEST(book_ignores_a_duplicate_id_and_keeps_the_resting_order) {
   OrderBook b(smallConfig());
   b.add_order(add(1, SIDE_BUY, 500, 1049));
-  b.add_order(add(1, SIDE_BUY, 999, 1040));     // same id, same side
+  b.add_order(add(1, SIDE_BUY, 999, 1040));     // aynı id, aynı side
 
   CHECK_EQ(b.stats().duplicate_order_ids, 1ull);
   CHECK_EQ(b.live_orders(), 1);
   CHECK_EQ(b.quantity_at(SIDE_BUY, 1049), 500ull);
-  CHECK_EQ(b.quantity_at(SIDE_BUY, 1040), 0ull);   // the second never landed
-  CHECK(b.healthy());                              // not an error, just ignored
+  CHECK_EQ(b.quantity_at(SIDE_BUY, 1040), 0ull);   // ikincisi hiç yerleşmedi
+  CHECK(b.healthy());                              // hata değil, sadece yok sayıldı
 }
 
 TEST(book_counts_an_execution_for_an_order_it_never_saw) {
@@ -183,12 +183,12 @@ TEST(book_counts_an_execution_for_an_order_it_never_saw) {
   CHECK_EQ(b.stats().unknown_order_ids, 2ull);
   CHECK_EQ(b.live_orders(), 0);
   CHECK(b.healthy());
-  CHECK(!b.has_last_execution());   // nothing was executed
+  CHECK(!b.has_last_execution());   // hiçbir şey execute edilmedi
 }
 
 TEST(book_skips_a_market_order_instead_of_placing_it) {
-  // The price sentinel is INT32_MIN; indexing a level with it would run far
-  // outside the band.
+  // Price sentinel'i INT32_MIN; onunla bir level index'lemek band'ın çok dışına
+  // taşardı.
   OrderBook b(smallConfig());
   b.add_order(add(1, SIDE_BUY, 500, 1049));
   b.add_order(add(2, SIDE_BUY, 300, PRICE_NOT_AVAILABLE));
@@ -201,7 +201,7 @@ TEST(book_skips_a_market_order_instead_of_placing_it) {
 
 TEST(book_keeps_an_undisclosed_order_on_its_level) {
   OrderBook b(smallConfig());
-  b.add_order(add(1, SIDE_BUY, 0, 1049));      // visible quantity zero
+  b.add_order(add(1, SIDE_BUY, 0, 1049));      // görünür quantity sıfır
 
   CHECK_EQ(b.quantity_at(SIDE_BUY, 1049), 0ull);
   CHECK_EQ(b.order_count_at(SIDE_BUY, 1049), 1u);
@@ -213,12 +213,12 @@ TEST(book_clamps_an_execution_larger_than_what_is_left) {
   OrderBook b(smallConfig());
   b.add_order(add(1, SIDE_BUY, 500, 1049));
 
-  b.order_executed(exec(1, SIDE_BUY, 900));    // more than the order holds
+  b.order_executed(exec(1, SIDE_BUY, 900));    // order'ın tuttuğundan fazla
 
   CHECK_EQ(b.stats().oversized_executions, 1ull);
   CHECK_EQ(b.live_orders(), 0);
   CHECK_EQ(b.quantity_at(SIDE_BUY, 1049), 0ull);
-  CHECK(!b.has_best(SIDE_BUY));                // no negative quantity left behind
+  CHECK(!b.has_best(SIDE_BUY));                // geride negatif quantity kalmadı
 }
 
 TEST(book_stops_being_healthy_when_the_pool_fills) {
@@ -232,7 +232,7 @@ TEST(book_stops_being_healthy_when_the_pool_fills) {
   b.add_order(add(5, SIDE_BUY, 10, 1005));
 
   CHECK(!b.healthy());
-  CHECK_EQ(b.live_orders(), 4);     // nothing was overwritten
+  CHECK_EQ(b.live_orders(), 4);     // hiçbir şeyin üzerine yazılmadı
 }
 
 TEST(book_stops_being_healthy_on_a_price_outside_the_band) {
@@ -240,14 +240,14 @@ TEST(book_stops_being_healthy_on_a_price_outside_the_band) {
   c.max_price_levels = 128;
   OrderBook b(c);
 
-  b.add_order(add(1, SIDE_BUY, 10, 10000));     // band is 9936 .. 10063
+  b.add_order(add(1, SIDE_BUY, 10, 10000));     // band 9936 .. 10063
   CHECK(b.healthy());
 
   b.add_order(add(2, SIDE_BUY, 10, 99999));
 
   CHECK(!b.healthy());
   CHECK(!b.invariants_hold());
-  CHECK_EQ(b.live_orders(), 1);     // the failed add did not stay in the pool
+  CHECK_EQ(b.live_orders(), 1);     // başarısız add pool'da kalmadı
 }
 
 TEST(book_tracks_state_and_the_end_of_day) {
@@ -264,13 +264,13 @@ TEST(book_tracks_state_and_the_end_of_day) {
 
   b.book_state(st(STATE_OTHER));
   CHECK_EQ(b.state(), STATE_OTHER);
-  CHECK(b.day_closed());            // the close does not get undone
+  CHECK(b.day_closed());            // kapanış geri alınmıyor
 }
 
 TEST(book_invariants_catch_a_crossed_book) {
   OrderBook b(smallConfig());
   b.add_order(add(1, SIDE_BUY,  100, 1050));
-  b.add_order(add(2, SIDE_SELL, 100, 1049));    // ask below bid
+  b.add_order(add(2, SIDE_SELL, 100, 1049));    // ask, bid'in altında
 
   CHECK(!b.invariants_hold());
 }

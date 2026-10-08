@@ -4,12 +4,7 @@
 // Programın yaptığı her heap allocation'ı sayıyor.
 //
 // Global operator new, alloc_counter.cpp içinde değiştirildiği için bu sayaç
-// hepsini görüyor: her new, büyüyen her vector, kurulan her string. Hiçbiri
-// bundan saklanamıyor.
-//
-// Amaç bir iddiayı bir ölçüme çevirmek. "Hot path'te allocation yok" bir iddia;
-// run'dan sonra sıfır okuyan bir sayaç ise kanıt, ve assignment'ın raporlanmasını
-// istediği şey kanıt.
+// hepsini görüyor: her new, büyüyen her vector, kurulan her string.
 //
 // Önemli olmasının sebebi, allocation'ın öngörülemez latency'nin tek başına en
 // kötü kaynağı olması. malloc boş bir blok bulup yirmi nanosaniyede dönebilir,

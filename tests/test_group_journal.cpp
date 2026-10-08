@@ -13,7 +13,7 @@ TEST(journal_starts_with_nothing_recorded) {
 
 TEST(journal_records_the_side_a_price_was_on) {
   GroupJournal j(64);
-  j.note(10, SIDE_SELL, /*bid*/ false, /*ask*/ true);   // an ask is being changed
+  j.note(10, SIDE_SELL, /*bid*/ false, /*ask*/ true);   // bir ask değiştiriliyor
 
   CHECK(j.changed_this_group(10));
   CHECK_EQ(j.side_before(10), SIDE_SELL);
@@ -21,7 +21,7 @@ TEST(journal_records_the_side_a_price_was_on) {
 }
 
 TEST(journal_records_an_empty_price_as_invalid) {
-  // Nothing was there before, so nothing disappeared and there is no direction.
+  // Öncesinde orada bir şey yoktu, yani hiçbir şey kaybolmadı ve bir yön yok.
   GroupJournal j(64);
   j.note(10, SIDE_BUY, false, false);
 
@@ -30,14 +30,15 @@ TEST(journal_records_an_empty_price_as_invalid) {
 }
 
 TEST(journal_keeps_the_first_touch_and_ignores_later_ones) {
-  // The first touch happens before anything in this group has changed the
-  // level, so that is the pre-group state. Later touches must not overwrite it.
+  // İlk dokunuş, bu group'ta level'ı henüz hiçbir şey değiştirmeden önce
+  // gerçekleşiyor; yani group öncesi durum o. Sonraki dokunuşlar onun üzerine
+  // yazmamalı.
   GroupJournal j(64);
 
-  j.note(10, SIDE_BUY, /*bid*/ true, /*ask*/ false);    // was a bid
+  j.note(10, SIDE_BUY, /*bid*/ true, /*ask*/ false);    // bid'di
   CHECK_EQ(j.side_before(10), SIDE_BUY);
 
-  // The bid is gone by now and an ask has appeared, but before_ must not move.
+  // Bu noktada bid gitti ve bir ask belirdi, ama before_ yerinden oynamamalı.
   j.note(10, SIDE_SELL, /*bid*/ false, /*ask*/ true);
   CHECK_EQ(j.side_before(10), SIDE_BUY);
 }
@@ -71,24 +72,24 @@ TEST(journal_forgets_everything_when_the_group_ends) {
 
   j.begin_group();
 
-  CHECK(!j.changed_this_group(10));      // stale by arithmetic, nothing was wiped
+  CHECK(!j.changed_this_group(10));      // aritmetikle stale oldu, hiçbir şey silinmedi
   CHECK(!j.flipped(10));
   CHECK_EQ(j.touched_mask(10), 0);
 }
 
 TEST(journal_clears_a_stale_mask_on_the_next_first_touch) {
-  // The arrays are never wiped, so a slot still holds the mask from an older
-  // group. Starting fresh is the job of the first touch in the new group.
+  // Array'ler hiç silinmiyor, yani bir slot hâlâ eski bir group'tan kalan mask'i
+  // tutuyor. Sıfırdan başlatmak, yeni group'taki ilk dokunuşun işi.
   GroupJournal j(64);
 
   j.note(10, SIDE_BUY,  true,  false);
   j.note(10, SIDE_SELL, false, true);
-  CHECK(j.flipped(10));                  // mask is 0b11 in this group
+  CHECK(j.flipped(10));                  // bu group'ta mask 0b11
 
   j.begin_group();
-  j.note(10, SIDE_BUY, true, false);     // only one side this time
+  j.note(10, SIDE_BUY, true, false);     // bu sefer sadece tek side
 
-  CHECK_EQ(j.touched_mask(10), 0x1);     // not 0b11 carried over
+  CHECK_EQ(j.touched_mask(10), 0x1);     // devreden 0b11 değil
   CHECK(!j.flipped(10));
 }
 
@@ -101,12 +102,12 @@ TEST(journal_keeps_prices_independent) {
   CHECK_EQ(j.side_before(20), SIDE_SELL);
   CHECK(!j.flipped(10));
   CHECK(!j.flipped(20));
-  CHECK(!j.changed_this_group(15));      // untouched price in between
+  CHECK(!j.changed_this_group(15));      // aradaki dokunulmamış price
 }
 
 TEST(journal_a_buy_here_and_a_sell_there_is_not_a_flip) {
-  // The mask is per price. Touching the bid at one price and the ask at
-  // another is ordinary market activity, not a price changing sides.
+  // Mask price başına tutuluyor. Bir price'ta bid'e, başka bir price'ta ask'e
+  // dokunmak sıradan piyasa hareketi; bir price'ın side değiştirmesi değil.
   GroupJournal j(64);
   j.note(10, SIDE_BUY,  true,  false);
   j.note(11, SIDE_SELL, false, true);
@@ -116,8 +117,8 @@ TEST(journal_a_buy_here_and_a_sell_there_is_not_a_flip) {
 }
 
 TEST(journal_treats_a_crossed_price_as_unknown) {
-  // Occupied on both sides at once should not survive a group boundary. If it
-  // does, there is no honest answer to "which side was it", so no direction.
+  // Aynı anda iki side'da birden dolu olmak bir group sınırını geçmemeli.
+  // Geçerse "hangi side'daydı" sorusunun dürüst bir cevabı yok, yani yön de yok.
   GroupJournal j(64);
   j.note(10, SIDE_BUY, /*bid*/ true, /*ask*/ true);
 
@@ -130,7 +131,7 @@ TEST(journal_survives_many_groups) {
   for (int g = 0; g < 1000; ++g) {
     j.note(5, (g % 2) ? SIDE_BUY : SIDE_SELL, (g % 2) != 0, (g % 2) == 0);
     CHECK(j.changed_this_group(5));
-    CHECK(!j.flipped(5));                // one side per group
+    CHECK(!j.flipped(5));                // group başına tek side
     j.begin_group();
   }
   CHECK(!j.changed_this_group(5));

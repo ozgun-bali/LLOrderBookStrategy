@@ -7,7 +7,7 @@
 // her seferinde aynı değeri üretmek zorunda. Ve benchmark modunda hiçbir şey
 // basılmadığı için optimizer'ı dürüst tutuyor - programdan çıkan bir değer
 // olmazsa -O3 bütün hesabın ölü olduğuna karar verip silmekte serbest, ve ölçüm
-// hiçbir şeyin ölçümü olurdu.
+// hiçbir şeyi ölçmezdi.
 //
 // FNV-1a ikisi için de yeterli. Sıraya duyarlı, ucuz, ve kriptografik olma
 // iddiası yok.
@@ -105,7 +105,7 @@ inline uint64_t compute_checksum(const RunSummary& s, const OrderLog& log) {
         const OrderIntent& o = log[i];
         h = fnv1a_u64(h, o.timestamp);
         h = fnv1a_u64(h, (uint64_t)o.side);
-        h = fnv1a_u64(h, (uint64_t)(uint32_t)o.price);   // signed, keep the bits
+        h = fnv1a_u64(h, (uint64_t)(uint32_t)o.price);   // signed, bitler aynen korunuyor
         h = fnv1a_u64(h, o.quantity);
         h = fnv1a_u64(h, (uint64_t)o.reason);
     }

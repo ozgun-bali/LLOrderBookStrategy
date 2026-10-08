@@ -3,8 +3,8 @@
 
 using namespace llobtest;
 
-// Reading fields back big-endian beats hand-computing hex for every expected value,
-// and it fails if the writer ever emits them little-endian.
+// Field'ları big-endian geri okumak, her beklenen değer için elle hex hesaplamaktan
+// iyi; ve writer bir gün onları little-endian yazarsa bu testler patlıyor.
 static uint32_t be32_at(const Bytes& b, std::size_t off) {
   return ((uint32_t)b[off] << 24) | ((uint32_t)b[off + 1] << 16)
        | ((uint32_t)b[off + 2] << 8) |  (uint32_t)b[off + 3];
@@ -85,41 +85,41 @@ TEST(book_state_lays_out_all_four_fields) {
                  | ((uint32_t)b[7] <<  8) |  (uint32_t)b[8];
   CHECK_EQ(book, 73616u);
 
-  const char* want = "P_SUREKLI_ISLEM";                  // 15 characters
+  const char* want = "P_SUREKLI_ISLEM";                  // 15 karakter
   for (std::size_t i = 0; i < 15; ++i)
     CHECK_EQ(b[9 + i], (uint8_t)want[i]);
 
-  for (std::size_t i = 24; i < 29; ++i)                  // 5 bytes of padding
+  for (std::size_t i = 24; i < 29; ++i)                  // 5 byte padding
     CHECK_EQ(b[i], 0x20);
 }
 
 TEST(book_state_pads_nothing_when_the_name_fills_the_field) {
-  Bytes b = book_state(1u, 73616u, "P_MARJ_YAYIN_KAPANIS");   // exactly 20
+  Bytes b = book_state(1u, 73616u, "P_MARJ_YAYIN_KAPANIS");   // tam 20
   REQUIRE(b.size() == 29);
 
   const char* want = "P_MARJ_YAYIN_KAPANIS";
   for (std::size_t i = 0; i < 20; ++i)
     CHECK_EQ(b[9 + i], (uint8_t)want[i]);
 
-  CHECK_EQ(b[28], (uint8_t)'S');    // last byte is content, not padding
+  CHECK_EQ(b[28], (uint8_t)'S');    // son byte içerik, padding değil
 }
 
 TEST(executed_lays_out_all_fields_including_the_reserved_tail) {
-  // id and book are deliberately far apart: a swap would be caught, not silently pass
+  // id ile book bilerek birbirinden uzak: yerleri değişse yakalanır, sessizce geçmez
   Bytes b = executed(10000000u, 77ull, 73616u, SIDE_SELL,
                      500ull, 0xAABBCCDD11223344ull, 0u);
   REQUIRE(b.size() == 52);
 
   CHECK_EQ(b[0], 0x45);                            // 'E'
-  CHECK_EQ(be32_at(b, 1), 10000000u);              // nanoseconds
+  CHECK_EQ(be32_at(b, 1), 10000000u);              // nanosecond
   CHECK_EQ(be64_at(b, 5), 77ull);                  // order id
   CHECK_EQ(be32_at(b, 13), 73616u);                // order book id
   CHECK_EQ(b[17], (uint8_t)'S');                   // side
-  CHECK_EQ(be64_at(b, 18), 500ull);                // executed quantity
+  CHECK_EQ(be64_at(b, 18), 500ull);                // execute edilen quantity
   CHECK_EQ(be64_at(b, 26), 0xAABBCCDD11223344ull); // match id
   CHECK_EQ(be32_at(b, 34), 0u);                    // combo group id
 
-  for (std::size_t i = 38; i < 52; ++i)            // two reserved fields, 7 + 7
+  for (std::size_t i = 38; i < 52; ++i)            // iki reserved field, 7 + 7
     CHECK_EQ(b[i], 0x00);
 }
 
@@ -134,23 +134,23 @@ TEST(add_order_lays_out_all_eleven_fields) {
   REQUIRE(b.size() == 45);
 
   CHECK_EQ(b[0], 0x41);                           // 'A'
-  CHECK_EQ(be32_at(b, 1), 10000000u);             // nanoseconds
+  CHECK_EQ(be32_at(b, 1), 10000000u);             // nanosecond
   CHECK_EQ(be64_at(b, 5), 77ull);                 // order id
   CHECK_EQ(be32_at(b, 13), 73616u);               // order book id
   CHECK_EQ(b[17], (uint8_t)'B');                  // side
-  CHECK_EQ(be32_at(b, 18), RANKSEQ);              // parser skips this: poisoned
+  CHECK_EQ(be32_at(b, 18), RANKSEQ);              // parser bunu atlıyor: bilerek zehirli değer
   CHECK_EQ(be64_at(b, 22), 500ull);               // quantity
   CHECK_EQ((int32_t)be32_at(b, 30), 104900);      // price
-  CHECK_EQ(be16_at(b, 34), 0u);                   // order attributes, default
+  CHECK_EQ(be16_at(b, 34), 0u);                   // order attribute'ları, default
   CHECK_EQ(b[36], 2);                             // lot type, round lot
-  CHECK_EQ(be64_at(b, 37), RANKINGTIME);          // parser skips this: poisoned
+  CHECK_EQ(be64_at(b, 37), RANKINGTIME);          // parser bunu atlıyor: bilerek zehirli değer
 }
 
 TEST(add_order_writes_the_market_order_price_sentinel) {
   Bytes b = add_order(1u, 1ull, 73616u, SIDE_SELL, 100ull, PRICE_NOT_AVAILABLE);
   REQUIRE(b.size() == 45);
 
-  // bit 31 set, every other bit zero: "no price", and a market order on an add
+  // bit 31 set, diğer her bit sıfır: "price yok", ve bir add'de market order demek
   CHECK_EQ(b[30], 0x80);
   CHECK_EQ(b[31], 0x00);
   CHECK_EQ(b[32], 0x00);
@@ -162,8 +162,8 @@ TEST(add_order_carries_undisclosed_quantity_and_custom_attributes) {
   Bytes b = add_order(1u, 1ull, 73616u, SIDE_BUY, 0ull, 104900, 8192, 2);
   REQUIRE(b.size() == 45);
 
-  CHECK_EQ(be64_at(b, 22), 0ull);    // spec: 0 means undisclosed quantity
-  CHECK_EQ(be16_at(b, 34), 8192u);   // spec: 8192 means bait/implied order
+  CHECK_EQ(be64_at(b, 22), 0ull);    // spec: 0, undisclosed quantity demek
+  CHECK_EQ(be16_at(b, 34), 8192u);   // spec: 8192, bait/implied order demek
 }
 
 TEST(serialize_frames_two_messages_into_one_packet) {
@@ -177,22 +177,22 @@ TEST(serialize_frames_two_messages_into_one_packet) {
 
   const char* sess = "BIST01";
   for (std::size_t i = 0; i < 6; ++i) CHECK_EQ(wire[i], (uint8_t)sess[i]);
-  for (std::size_t i = 6; i < 10; ++i) CHECK_EQ(wire[i], 0x20);   // padded
+  for (std::size_t i = 6; i < 10; ++i) CHECK_EQ(wire[i], 0x20);   // pad'lenmiş
 
-  CHECK_EQ(be64_at(wire, 10), 42ull);     // sequence of the FIRST message
-  CHECK_EQ(be16_at(wire, 18), 2u);        // message count, filled by make_packet
+  CHECK_EQ(be64_at(wire, 10), 42ull);     // İLK message'ın sequence'i
+  CHECK_EQ(be16_at(wire, 18), 2u);        // message count, make_packet dolduruyor
 
-  CHECK_EQ(be16_at(wire, 20), 45u);       // first block length
-  CHECK_EQ(wire[22], (uint8_t)'A');       // first message starts right after
+  CHECK_EQ(be16_at(wire, 20), 45u);       // ilk block length'i
+  CHECK_EQ(wire[22], (uint8_t)'A');       // ilk message hemen ardından başlıyor
 
-  CHECK_EQ(be16_at(wire, 67), 18u);       // second block length: 22 + 45 = 67
+  CHECK_EQ(be16_at(wire, 67), 18u);       // ikinci block length'i: 22 + 45 = 67
   CHECK_EQ(wire[69], (uint8_t)'D');
 }
 
 TEST(serialize_writes_a_heartbeat_as_a_bare_header) {
   Bytes wire = serialize(make_packet("BIST01", 7, {}));
-  REQUIRE(wire.size() == 20);             // header only, no blocks
-  CHECK_EQ(be16_at(wire, 18), 0u);        // count 0 is what marks a heartbeat
+  REQUIRE(wire.size() == 20);             // sadece header, block yok
+  CHECK_EQ(be16_at(wire, 18), 0u);        // heartbeat'i işaretleyen şey count 0
 }
 
 TEST(end_of_session_is_a_count_of_ffff) {
@@ -212,16 +212,16 @@ TEST(corruptors_break_exactly_one_thing_each) {
 
   Bytes shortHeader = good;
   truncate_to(shortHeader, 15);
-  CHECK_EQ(shortHeader.size(), 15);       // header cut off mid-field
+  CHECK_EQ(shortHeader.size(), 15);       // header bir field'ın ortasından kesilmiş
 
   Bytes wrongCount = good;
   set_message_count(wrongCount, 99);
-  CHECK_EQ(be16_at(wrongCount, 18), 99u); // claims 99 blocks, carries 1
+  CHECK_EQ(be16_at(wrongCount, 18), 99u); // 99 block iddia ediyor, 1 taşıyor
   CHECK_EQ(wrongCount.size(), good.size());
 
   Bytes wrongLen = good;
   set_block_length(wrongLen, 0, 9999);
-  CHECK_EQ(be16_at(wrongLen, 20), 9999u); // block runs past the packet
+  CHECK_EQ(be16_at(wrongLen, 20), 9999u); // block packet'in dışına taşıyor
   CHECK_EQ(wrongLen.size(), good.size());
-  CHECK_EQ(wrongLen[22], (uint8_t)'D');   // payload itself untouched
+  CHECK_EQ(wrongLen[22], (uint8_t)'D');   // payload'ın kendisine dokunulmadı
 }

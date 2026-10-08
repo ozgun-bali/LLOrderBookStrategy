@@ -1,18 +1,18 @@
 #ifndef LLOB_TESTS_FEED_FIXTURE_HPP
 #define LLOB_TESTS_FEED_FIXTURE_HPP
 
-// Runs a synthetic feed through the assembled program.
+// Sentetik bir feed'i kurulmuş programın içinden geçiriyor.
 //
-// The per-component tests check each layer against its own interface. These run
-// bytes in at one end and read the reported summary out at the other, with every
-// real layer in between: DatagramSource, MoldSession, ItchParser, Engine,
-// OrderBook, GapStrategy, FillSimulator, PositionTracker.
+// Component başına yazılan testler her katmanı kendi arayüzüne karşı kontrol
+// ediyor. Buradakiler ise bir uçtan byte veriyor, diğer uçtan raporlanan özeti
+// okuyor; arada gerçek olan her katman var: DatagramSource, MoldSession,
+// ItchParser, Engine, OrderBook, GapStrategy, FillSimulator, PositionTracker.
 //
-// That is a different question from the component tests. A layer can be correct
-// on its own and still be wired up wrongly - a counter read from the wrong
-// object, a handler never reached, a limit applied to the wrong number. Only a
-// run through the whole chain catches that, and the scenarios the assignment
-// names are exactly the ones worth checking at this level.
+// Bu, component testlerinden farklı bir soru. Bir katman kendi başına doğru olup
+// yine de yanlış bağlanmış olabilir - yanlış nesneden okunan bir sayaç, hiç
+// ulaşılmayan bir handler, yanlış sayıya uygulanan bir limit. Bunu sadece bütün
+// zincirden geçen bir run yakalıyor, ve assignment'ın saydığı senaryolar tam
+// olarak bu seviyede kontrol edilmeye değer olanlar.
 
 #include "message_builder.hpp"
 
@@ -27,8 +27,8 @@ const OrderBookId TARGET_BOOK = 73616u;
 const OrderBookId OTHER_BOOK  = 99999u;
 const uint32_t    FEED_SECOND = 1000u;
 
-// Timestamps are composed as second * 1e9 + nanos, so this is what a message
-// written at `nanos` ends up grouped under.
+// Timestamp'ler second * 1e9 + nanos olarak compose ediliyor, yani `nanos`
+// anında yazılmış bir message sonunda bunun altında grupleniyor.
 inline Timestamp at(uint32_t nanos) {
     return (Timestamp)FEED_SECOND * 1000000000ull + nanos;
 }
@@ -52,9 +52,9 @@ inline Bytes state_close(uint32_t nanos) {
     return book_state(nanos, TARGET_BOOK, STATE_NAME_MARJ_YAYIN_KAPANIS);
 }
 
-// Continuous trading, bid 1049, ask 1050, ask 1051, all in one group.
-// Deleting the ask at 1050 then leaves bid 1049 against ask 1051: a one-tick
-// hole at 1050, which is what the strategy looks for.
+// Continuous trading; bid 1049, ask 1050, ask 1051, hepsi tek bir group'ta.
+// 1050'deki ask'i silmek geriye bid 1049'a karşı ask 1051 bırakıyor: 1050'de
+// tek tick'lik bir delik, yani strategy'nin aradığı şey.
 inline void open_the_book(Feed& f) {
     f.packet({ seconds(FEED_SECOND),
                state_open(1),
@@ -63,8 +63,8 @@ inline void open_the_book(Feed& f) {
                add_order(1, 3, TARGET_BOOK, SIDE_SELL,  800, 1051) });
 }
 
-// The mirror image: bid 1048, bid 1049, ask 1050. Deleting the bid at 1049
-// leaves a hole at 1049 that was a bid, so the refill is a buy.
+// Ayna görüntüsü: bid 1048, bid 1049, ask 1050. 1049'daki bid'i silmek
+// 1049'da bid olan bir delik bırakıyor, yani doldurma işlemi bir alış.
 inline void open_the_book_for_a_bid_gap(Feed& f) {
     f.packet({ seconds(FEED_SECOND),
                state_open(1),
@@ -73,8 +73,8 @@ inline void open_the_book_for_a_bid_gap(Feed& f) {
                add_order(1, 3, TARGET_BOOK, SIDE_SELL,  800, 1050) });
 }
 
-// One complete run. Holds the log and the summary after it finishes; the
-// pipeline itself is gone by then, so nothing can keep reading the book.
+// Tek bir tam run. Bittikten sonra log'u ve özeti tutuyor; pipeline'ın kendisi
+// o noktada yok olmuş oluyor, yani kimse book'u okumaya devam edemiyor.
 struct Run {
     Config     cfg;
     OrderLog   log;

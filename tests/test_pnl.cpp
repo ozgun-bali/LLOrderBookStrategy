@@ -1,11 +1,11 @@
-// Risk and P&L tests, end to end.
+// Risk ve P&L testleri, uçtan uca.
 //
-// The scenarios the assignment names: quantity reduction near the limit, no
-// order generated at the limit, BUY cash flow, SELL cash flow, end of day mark
-// to market. test_position.cpp checks the arithmetic against PositionTracker
-// directly. Here the order comes out of the strategy, is filled by the fill
-// model and lands in the reported summary, which is the number a reviewer will
-// actually read.
+// Assignment'ın saydığı senaryolar: limite yaklaşırken quantity'nin kısılması,
+// limitte hiç order üretilmemesi, BUY cash flow, SELL cash flow, gün sonu mark
+// to market. test_position.cpp aritmetiği doğrudan PositionTracker'a karşı
+// kontrol ediyor. Burada ise order strategy'den çıkıyor, fill model tarafından
+// fill ediliyor ve raporlanan özete düşüyor - değerlendirmeyi yapan kişinin
+// gerçekten okuyacağı sayı o.
 
 #include "test_framework.hpp"
 #include "feed_fixture.hpp"
@@ -22,7 +22,7 @@ TEST(pnl_e2e_a_sell_takes_in_cash_and_goes_short) {
 
   REQUIRE(r.s.generated_order_count == 1ull);
   CHECK_EQ(r.s.position, -100);
-  CHECK_EQ(r.s.cash_flow, 105000);             // 100 x 1050 came in
+  CHECK_EQ(r.s.cash_flow, 105000);             // 100 x 1050 içeri girdi
   CHECK_EQ(r.s.fills, 1ull);
 }
 
@@ -35,13 +35,13 @@ TEST(pnl_e2e_a_buy_pays_out_and_goes_long) {
 
   REQUIRE(r.s.generated_order_count == 1ull);
   CHECK_EQ(r.s.position, 100);
-  CHECK_EQ(r.s.cash_flow, -104900);            // 100 x 1049 went out
+  CHECK_EQ(r.s.cash_flow, -104900);            // 100 x 1049 dışarı çıktı
 }
 
 TEST(pnl_e2e_the_quantity_is_cut_down_to_what_the_limit_allows) {
-  // The configured order size is 100 but only 50 of room is left. Sending 100
-  // and letting the position break the limit is not an option, and sending
-  // nothing throws away half a trade that is allowed.
+  // Config'deki order boyutu 100 ama sadece 50 yer kalmış. 100 gönderip
+  // position'ın limiti aşmasına izin vermek seçenek değil, hiçbir şey
+  // göndermemek ise izin verilen yarım işlemi çöpe atmak olur.
   Config c = base_config();
   c.maximum_position = 50;
 
@@ -52,7 +52,7 @@ TEST(pnl_e2e_the_quantity_is_cut_down_to_what_the_limit_allows) {
   Run r(c, f.wire);
 
   REQUIRE(r.log.size() == 1);
-  CHECK_EQ(r.log[0].quantity, 50ull);          // cut, not refused
+  CHECK_EQ(r.log[0].quantity, 50ull);          // kısıldı, reddedilmedi
   CHECK_EQ(r.s.position, 50);
   CHECK_EQ(r.s.cash_flow, -52450);             // 50 x 1049
 }
@@ -74,12 +74,13 @@ TEST(pnl_e2e_nothing_is_sent_when_there_is_no_room_left) {
 }
 
 TEST(pnl_e2e_the_day_is_marked_at_the_closing_price) {
-  // Sell 100 at 1050, then the market trades at 1051, then the close arrives.
-  // Being short at a higher price is a loss, and it has to show.
+  // 1050'den 100 sat, sonra piyasa 1051'den işlem görsün, sonra kapanış gelsin.
+  // Daha yüksek bir price'ta short olmak zarar demek, ve bunun görünmesi
+  // gerekiyor.
   Feed f;
   open_the_book(f);
-  f.packet({ deleted(2, 2, TARGET_BOOK, SIDE_SELL) });              // sell 100 @ 1050
-  f.packet({ executed(3, 3, TARGET_BOOK, SIDE_SELL, 100, 1, 0) });  // market trades @ 1051
+  f.packet({ deleted(2, 2, TARGET_BOOK, SIDE_SELL) });              // 1050'den 100 sat
+  f.packet({ executed(3, 3, TARGET_BOOK, SIDE_SELL, 100, 1, 0) });  // piyasa 1051'den işlem gördü
   f.packet({ state_close(4) });
 
   Run r(base_config(), f.wire);
@@ -95,9 +96,9 @@ TEST(pnl_e2e_the_day_is_marked_at_the_closing_price) {
 }
 
 TEST(pnl_e2e_an_open_position_with_no_traded_price_has_no_pnl) {
-  // Nothing ever executed on this book, so there is no price to value the
-  // position at. Reporting 0 would read as break-even, which is a different
-  // claim from "not known".
+  // Bu book'ta hiç execution olmadı, yani position'ı değerleyecek bir price
+  // yok. 0 raporlamak "başa baş" diye okunurdu, ki bu "bilinmiyor"dan bambaşka
+  // bir iddia.
   Feed f;
   open_the_book(f);
   f.packet({ deleted(2, 2, TARGET_BOOK, SIDE_SELL) });
@@ -111,9 +112,9 @@ TEST(pnl_e2e_an_open_position_with_no_traded_price_has_no_pnl) {
 }
 
 TEST(pnl_e2e_flat_at_the_close_needs_no_price) {
-  // No signal was ever produced, so the position is flat. A flat book is worth
-  // its cash flow whatever the market does, so the P&L is known even with no
-  // execution price at all.
+  // Hiç signal üretilmedi, yani position flat. Flat bir book piyasa ne yaparsa
+  // yapsın kendi cash flow'u kadar ediyor, yani hiç execution price'ı olmasa
+  // bile P&L biliniyor.
   Feed f;
   open_the_book(f);
   f.packet({ state_close(2) });
@@ -127,9 +128,9 @@ TEST(pnl_e2e_flat_at_the_close_needs_no_price) {
 }
 
 TEST(pnl_e2e_the_summary_is_byte_for_byte_repeatable) {
-  // The checksum is what the benchmark compares across iterations. If the same
-  // bytes produced a different summary, every performance number taken from a
-  // replay would be meaningless.
+  // Benchmark'ın iterasyonlar arasında karşılaştırdığı şey checksum. Aynı
+  // byte'lar farklı bir özet üretseydi, bir replay'den alınan her performans
+  // sayısı anlamsız olurdu.
   Feed f;
   open_the_book(f);
   f.packet({ deleted(2, 2, TARGET_BOOK, SIDE_SELL) });

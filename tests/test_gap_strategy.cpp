@@ -35,8 +35,8 @@ BookStateMsg st(BookState s) {
     BookStateMsg m; m.nanos = 0; m.state = s; return m;
 }
 
-// A book in continuous trading with bid 1049, ask 1050, ask 1051.
-// Deleting the ask at 1050 opens the one-tick gap the strategy looks for.
+// Continuous trading'de bir book: bid 1049, ask 1050, ask 1051.
+// 1050'deki ask'i silmek, strategy'nin aradığı tek tick'lik gap'i açıyor.
 struct Fixture {
     Config      c;
     OrderBook   book;
@@ -62,12 +62,12 @@ TEST(strategy_signals_a_sell_when_an_ask_level_vanishes) {
   Fixture f;
   CHECK_EQ(f.sink.intents.size(), 0);
 
-  f.book.order_delete(del(2, SIDE_SELL));     // 1050 empties
+  f.book.order_delete(del(2, SIDE_SELL));     // 1050 boşalıyor
   f.endGroup();
 
   REQUIRE(f.sink.intents.size() == 1);
   const OrderIntent& i = f.sink.intents[0];
-  CHECK_EQ(i.side, SIDE_SELL);                // refill the side that emptied
+  CHECK_EQ(i.side, SIDE_SELL);                // boşalan side'ı doldur
   CHECK_EQ(i.price, 1050);
   CHECK_EQ(i.quantity, 100ull);
   CHECK_EQ(i.reason, REASON_GAP_WAS_ASK);
@@ -82,11 +82,11 @@ TEST(strategy_signals_a_buy_when_a_bid_level_vanishes) {
 
   book.book_state(st(STATE_SUREKLI_ISLEM));
   book.add_order(add(1, SIDE_BUY,  500, 1048));
-  book.add_order(add(2, SIDE_BUY,  600, 1049));   // this one will go
+  book.add_order(add(2, SIDE_BUY,  600, 1049));   // gidecek olan bu
   book.add_order(add(3, SIDE_SELL, 800, 1050));
   strat.evaluate(book, true, 0, 1); book.begin_group();
 
-  book.order_delete(del(2, SIDE_BUY));            // 1049 empties
+  book.order_delete(del(2, SIDE_BUY));            // 1049 boşalıyor
   strat.evaluate(book, true, 0, 2);
 
   REQUIRE(sink.intents.size() == 1);
@@ -96,27 +96,27 @@ TEST(strategy_signals_a_buy_when_a_bid_level_vanishes) {
 }
 
 TEST(strategy_ignores_a_gap_that_was_already_open) {
-  // Rule 5. The level did not disappear during this group, so the chance to
-  // be first at it has long gone.
+  // Kural 5. Level bu group sırasında kaybolmadı, yani orada ilk olma şansı
+  // çoktan geçti.
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
   f.endGroup();
   CHECK_EQ(f.sink.intents.size(), 1);
 
-  f.endGroup();                                 // a later group, nothing touched
+  f.endGroup();                                 // sonraki bir group, hiçbir şeye dokunulmadı
   f.endGroup();
 
-  CHECK_EQ(f.sink.intents.size(), 1);           // still just the one
+  CHECK_EQ(f.sink.intents.size(), 1);           // hâlâ sadece o bir tane
   CHECK(f.strat.stats().skip_not_this_group >= 2);
 }
 
 TEST(strategy_ignores_a_price_that_changed_sides_in_the_group) {
-  // Rule 6. The ask at 1050 goes, a bid appears at 1050, and that goes too.
-  // The level ends up empty, but the market moved through it.
+  // Kural 6. 1050'deki ask gidiyor, 1050'de bir bid beliriyor, o da gidiyor.
+  // Level sonunda boş kalıyor, ama piyasa onun içinden geçip gitti.
   Fixture f;
-  f.book.order_delete(del(2, SIDE_SELL));       // ask at 1050 gone
+  f.book.order_delete(del(2, SIDE_SELL));       // 1050'deki ask gitti
   f.book.add_order(add(9, SIDE_BUY, 300, 1050));
-  f.book.order_delete(del(9, SIDE_BUY));        // and the bid too
+  f.book.order_delete(del(9, SIDE_BUY));        // bid de gitti
   f.endGroup();
 
   CHECK_EQ(f.sink.intents.size(), 0);
@@ -124,18 +124,18 @@ TEST(strategy_ignores_a_price_that_changed_sides_in_the_group) {
 }
 
 TEST(strategy_sends_only_one_order_while_the_hole_churns) {
-  // Rule 7's requirement: one order per gap. What actually stops the second
-  // one here is the direction check, not the duplicate memory. At the start of
-  // this group 1050 was already empty, so nothing disappeared from it and
-  // there is no side to refill. Rule 5 and the direction rule between them
-  // cover every repeat; the duplicate memory is a backstop behind both.
+  // Kural 7'nin şartı: gap başına tek order. Ama burada ikinciyi asıl durduran
+  // şey duplicate hafızası değil, yön kontrolü. Bu group'un başında 1050 zaten
+  // boştu, yani oradan bir şey kaybolmadı ve doldurulacak bir side yok. Kural 5
+  // ile yön kuralı ikisi birlikte her tekrarı kapsıyor; duplicate hafızası
+  // ikisinin de arkasında duran bir emniyet.
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
   f.endGroup();
   CHECK_EQ(f.sink.intents.size(), 1);
 
   f.book.add_order(add(10, SIDE_SELL, 100, 1050));
-  f.book.order_delete(del(10, SIDE_SELL));      // filled and emptied in one group
+  f.book.order_delete(del(10, SIDE_SELL));      // tek bir group'ta doldu ve boşaldı
   f.endGroup();
 
   CHECK_EQ(f.sink.intents.size(), 1);
@@ -148,13 +148,13 @@ TEST(strategy_signals_again_once_the_gap_really_closes_and_reopens) {
   f.endGroup();
   CHECK_EQ(f.sink.intents.size(), 1);
 
-  f.book.add_order(add(10, SIDE_SELL, 100, 1050));   // gap closes for real
+  f.book.add_order(add(10, SIDE_SELL, 100, 1050));   // gap gerçekten kapanıyor
   f.endGroup();
 
-  f.book.order_delete(del(10, SIDE_SELL));           // and opens again
+  f.book.order_delete(del(10, SIDE_SELL));           // ve yeniden açılıyor
   f.endGroup();
 
-  CHECK_EQ(f.sink.intents.size(), 2);                // a new opportunity
+  CHECK_EQ(f.sink.intents.size(), 2);                // yeni bir fırsat
   CHECK_EQ(f.sink.intents[1].price, 1050);
 }
 
@@ -171,7 +171,7 @@ TEST(strategy_stays_quiet_outside_continuous_trading) {
 TEST(strategy_stays_quiet_after_the_day_closes) {
   Fixture f;
   f.book.book_state(st(STATE_MARJ_YAYIN_KAPANIS));
-  f.book.book_state(st(STATE_SUREKLI_ISLEM));   // even if the state comes back
+  f.book.book_state(st(STATE_SUREKLI_ISLEM));   // state geri gelse bile
   f.book.order_delete(del(2, SIDE_SELL));
   f.endGroup();
 
@@ -179,7 +179,8 @@ TEST(strategy_stays_quiet_after_the_day_closes) {
 }
 
 TEST(strategy_stays_quiet_when_the_sequence_stream_is_broken) {
-  // A book built on missed messages is fiction, and the gap may not be real.
+  // Kaçırılmış message'lar üzerine kurulmuş bir book kurgudur, ve gap gerçek
+  // olmayabilir.
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
   f.endGroupUnreliable();
@@ -197,7 +198,7 @@ TEST(strategy_needs_a_level_on_both_sides) {
   book.book_state(st(STATE_SUREKLI_ISLEM));
   book.add_order(add(1, SIDE_SELL, 600, 1050));
   book.add_order(add(2, SIDE_SELL, 800, 1051));
-  book.order_delete(del(1, SIDE_SELL));         // 1050 empty, but no bids at all
+  book.order_delete(del(1, SIDE_SELL));         // 1050 boş, ama hiç bid yok
   strat.evaluate(book, true, 0, 1);
 
   CHECK_EQ(sink.intents.size(), 0);
@@ -212,7 +213,7 @@ TEST(strategy_ignores_a_spread_wider_than_one_tick) {
 
   book.book_state(st(STATE_SUREKLI_ISLEM));
   book.add_order(add(1, SIDE_BUY,  500, 1049));
-  book.add_order(add(2, SIDE_SELL, 600, 1052));   // three ticks apart
+  book.add_order(add(2, SIDE_SELL, 600, 1052));   // üç tick arayla
   book.add_order(add(3, SIDE_SELL, 600, 1053));
   strat.evaluate(book, true, 0, 1); book.begin_group();
 
@@ -226,7 +227,7 @@ TEST(strategy_ignores_a_spread_wider_than_one_tick) {
 TEST(strategy_cuts_the_quantity_down_to_the_position_limit) {
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
-  f.endGroup(-924);                 // short 924, floor is -1000, so 76 left
+  f.endGroup(-924);                 // 924 short, taban -1000, yani 76 kaldı
 
   REQUIRE(f.sink.intents.size() == 1);
   CHECK_EQ(f.sink.intents[0].side, SIDE_SELL);
@@ -236,21 +237,21 @@ TEST(strategy_cuts_the_quantity_down_to_the_position_limit) {
 TEST(strategy_sends_nothing_when_the_limit_is_already_reached) {
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
-  f.endGroup(-1000);                // exactly at the short limit
+  f.endGroup(-1000);                // tam short limitinde
 
   CHECK_EQ(f.sink.intents.size(), 0);
   CHECK_EQ(f.strat.stats().skip_position_limit, 1ull);
 }
 
 TEST(strategy_handles_a_negative_position_without_wrapping) {
-  // minimum_position is negative, so every step of the room calculation has to
-  // stay signed. An unsigned slip here would allow unlimited selling.
+  // minimum_position negatif, yani kalan yer hesabının her adımı signed kalmak
+  // zorunda. Buradaki unsigned bir kayma sınırsız satışa izin verirdi.
   Fixture f;
   f.book.order_delete(del(2, SIDE_SELL));
-  f.endGroup(-500);                 // -500 - (-1000) = 500 of room
+  f.endGroup(-500);                 // -500 - (-1000) = 500 yer
 
   REQUIRE(f.sink.intents.size() == 1);
-  CHECK_EQ(f.sink.intents[0].quantity, 100ull);   // capped by order_quantity
+  CHECK_EQ(f.sink.intents[0].quantity, 100ull);   // order_quantity ile sınırlandı
 }
 
 TEST(strategy_runs_once_per_group_not_once_per_message) {

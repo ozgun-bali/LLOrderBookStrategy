@@ -23,16 +23,16 @@ TEST(source_finds_the_boundary_between_glued_packets) {
 
   REQUIRE(src.next(ptr, len));
   CHECK_EQ(len, p1.size());
-  CHECK_EQ(ptr, &all[0]);                 // a view, nothing copied
+  CHECK_EQ(ptr, &all[0]);                 // bir view, hiçbir şey kopyalanmadı
 
   REQUIRE(src.next(ptr, len));
   CHECK_EQ(len, p2.size());
   CHECK_EQ(ptr, &all[0] + p1.size());
 
-  CHECK(!src.next(ptr, len));             // end of data
+  CHECK(!src.next(ptr, len));             // data'nın sonu
   CHECK_EQ(src.packets(), 2ull);
   CHECK(!src.truncated());
-  CHECK_EQ(src.offset(), all.size());     // landed exactly on the last byte
+  CHECK_EQ(src.offset(), all.size());     // tam olarak son byte'a oturdu
 }
 
 TEST(source_handles_packets_of_different_sizes) {
@@ -54,7 +54,7 @@ TEST(source_handles_packets_of_different_sizes) {
 }
 
 TEST(source_treats_a_heartbeat_as_a_bare_header) {
-  Bytes hb = serialize(make_packet("BIST01", 7, {}));    // count 0, no blocks
+  Bytes hb = serialize(make_packet("BIST01", 7, {}));    // count 0, block yok
   Bytes p2 = serialize(make_packet("BIST01", 7, { del(1) }));
   Bytes all = glue(std::vector<Bytes>{ hb, p2 });
 
@@ -62,15 +62,15 @@ TEST(source_treats_a_heartbeat_as_a_bare_header) {
   const uint8_t* ptr = 0; std::size_t len = 0;
 
   REQUIRE(src.next(ptr, len));
-  CHECK_EQ(len, 20);                      // header only
+  CHECK_EQ(len, 20);                      // sadece header
   REQUIRE(src.next(ptr, len));
   CHECK_EQ(len, 40);
   CHECK_EQ(src.offset(), all.size());
 }
 
 TEST(source_treats_end_of_session_as_a_bare_header_too) {
-  // 0xFFFF is a marker, not a block count. Walking it as one would run off
-  // the end of the file.
+  // 0xFFFF bir marker, block count değil. Onu count sanıp yürümek dosyanın
+  // sonundan taşardı.
   MoldUDP64Packet p = make_packet("BIST01", 9, {});
   p.header.mesCount = 0xFFFF;
   Bytes eos = serialize(p);
@@ -89,7 +89,7 @@ TEST(source_treats_end_of_session_as_a_bare_header_too) {
 
 TEST(source_stops_on_a_header_cut_short) {
   Bytes all = serialize(make_packet("BIST01", 1, { del(1) }));
-  all.resize(15);                         // less than the 20-byte header
+  all.resize(15);                         // 20 byte'lık header'dan kısa
 
   DatagramSource src(&all[0], all.size());
   const uint8_t* ptr = 0; std::size_t len = 0;
@@ -100,8 +100,8 @@ TEST(source_stops_on_a_header_cut_short) {
 }
 
 TEST(source_stops_when_a_block_runs_past_the_end) {
-  // The boundary cannot be computed any more, so neither can any boundary
-  // after it. Stopping beats guessing.
+  // Sınır artık hesaplanamıyor, yani ondan sonraki hiçbir sınır da
+  // hesaplanamaz. Durmak, tahmin etmekten iyidir.
   Bytes p1 = serialize(make_packet("BIST01", 1, { del(1) }));
   Bytes p2 = serialize(make_packet("BIST01", 2, { del(2) }));
   set_block_length(p2, 0, 9999);
@@ -110,7 +110,7 @@ TEST(source_stops_when_a_block_runs_past_the_end) {
   DatagramSource src(&all[0], all.size());
   const uint8_t* ptr = 0; std::size_t len = 0;
 
-  REQUIRE(src.next(ptr, len));            // the good one still comes through
+  REQUIRE(src.next(ptr, len));            // sağlam olan yine de geçiyor
   CHECK_EQ(len, p1.size());
 
   CHECK(!src.next(ptr, len));
@@ -124,7 +124,7 @@ TEST(source_on_an_empty_buffer_just_ends) {
   const uint8_t* ptr = 0; std::size_t len = 0;
 
   CHECK(!src.next(ptr, len));
-  CHECK(!src.truncated());                // nothing to read is not a failure
+  CHECK(!src.truncated());                // okunacak bir şey olmaması hata değil
 }
 
 TEST(order_log_keeps_what_it_is_given) {
@@ -145,8 +145,8 @@ TEST(order_log_reports_outgrowing_its_reserve) {
   log.add(a); log.add(a);
   CHECK(!log.grew());
   log.add(a);
-  CHECK(log.grew());                      // counted, not hidden
-  CHECK_EQ(log.size(), 3);                // and nothing lost
+  CHECK(log.grew());                      // sayıldı, gizlenmedi
+  CHECK_EQ(log.size(), 3);                // ve hiçbir şey kaybolmadı
 }
 
 TEST(checksum_is_stable_and_sensitive) {
@@ -162,18 +162,18 @@ TEST(checksum_is_stable_and_sensitive) {
   a.add(i1); a.add(i2);
 
   const uint64_t h = compute_checksum(s, a);
-  CHECK_EQ(compute_checksum(s, a), h);    // same input, same value
+  CHECK_EQ(compute_checksum(s, a), h);    // aynı input, aynı değer
 
-  OrderLog b; b.add(i2); b.add(i1);       // same orders, other order
+  OrderLog b; b.add(i2); b.add(i1);       // aynı order'lar, farklı sıra
   CHECK(compute_checksum(s, b) != h);
 
-  RunSummary s2 = s; s2.cash_flow += 1;   // one kurus different
+  RunSummary s2 = s; s2.cash_flow += 1;   // bir kuruş farklı
   CHECK(compute_checksum(s2, a) != h);
 }
 
 TEST(checksum_keeps_the_bits_of_a_negative_price) {
-  // The market order sentinel is INT32_MIN. Folding it through a signed
-  // widening would sign-extend and two different prices could collide.
+  // Market order sentinel'i INT32_MIN. Onu signed bir genişletmeyle katlamak
+  // sign-extend ederdi ve iki farklı price çakışabilirdi.
   RunSummary s;
   OrderLog a, b;
   OrderIntent i; i.timestamp = 1; i.side = SIDE_BUY; i.quantity = 1;

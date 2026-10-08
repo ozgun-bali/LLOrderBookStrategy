@@ -5,23 +5,21 @@
 //
 // Assignment'ın koyduğu kurallar, ve her birinin neden orada olduğu:
 //
-//   Input, hiçbir şey ölçülmeden önce bellekte. Okumayı ölçmek diski ölçmek
+//   Input, hiçbir şey ölçülmeden önce bellekte. Okumayı ölçmek disk hızını ölçmek
 //   olurdu.
 //
-//   En az bir warm-up pass'ı ölçülmeden koşuyor. Soğuk bir ilk pass kararlı
-//   haline göre kat kat yavaş olabiliyor, ve bunun hiçbiri kodun yaptığı bir şey
+//   En az bir warm-up pass'ı ölçülmeden çalışıyor. Soğuk bir ilk pass kararlı
+//   haline göre kat kat yavaş olabiliyor, ve bunun hiçbiri kodun suçu
 //   değil: yeni allocate edilmiş 584 MB'lık sayfa tek tek page fault'la içeri
 //   giriyor, cache'ler ve branch predictor'lar boş başlıyor, ve çekirdek hâlâ
 //   düşük frekansta olabiliyor.
 //
-//   Data çok kez tekrar oynatılıyor. Bir pass bir örnek demek, ve tek bir
-//   scheduler kararı ya da bir interrupt onu kolayca onda bir oynatıyor.
-//
+//   Data çok kez tekrar oynatılıyor.
 //   Timed region'ın içinde hiç dosya ya da konsol çıktısı yok.
 //
 //   Programdan bir checksum çıkıyor. Hiçbir şeyin bağlı olmadığı bir değer
 //   olmazsa -O3 bütün hesabın ölü olduğunu fark edip onu kaldırmakta haklı, ve
-//   ölçüm hiçbir şeyin ölçümü olurdu.
+//   ölçüm bir şey ölçmezdi.
 //
 // Her iterasyon yeni bir pipeline kuruyor, yani her pass boş bir book'la başlıyor
 // ve birebir aynı işi yapıyor.
@@ -42,7 +40,7 @@ struct BenchmarkResult {
     double total_seconds;       // ölçülen bütün iterasyonlar boyunca
     double best_seconds;        // en temiz tek pass
     double worst_seconds;
-    double messages_per_second; // from the best pass
+    double messages_per_second; // en iyi pass'tan
     double ns_per_message;
 
     uint64_t messages_per_iteration;

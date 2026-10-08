@@ -13,8 +13,9 @@ struct Recorder {
     void on_order_intent(const OrderIntent& i) { intents.push_back(i); }
 };
 
-// Records when the strategy was asked and what the book looked like then, so
-// the grouping can be checked without the real rules getting in the way.
+// Strategy'nin ne zaman sorulduğunu ve o anda book'un nasıl göründüğünü
+// kaydediyor; böylece grouping, gerçek kurallar araya girmeden kontrol
+// edilebiliyor.
 struct SpyStrategy {
     struct Call { Timestamp ts; bool sequence_ok; Position position;
                   bool has_bid; Price bid; };
@@ -62,25 +63,25 @@ TEST(engine_runs_the_strategy_once_per_group_not_once_per_message) {
   e.on_add_order(100, add(1, SIDE_BUY,  10, 1049));   // group 100
   e.on_add_order(100, add(2, SIDE_SELL, 10, 1051));
   e.on_add_order(100, add(3, SIDE_SELL, 10, 1052));
-  CHECK_EQ(spy.calls.size(), 0);                      // group still open
+  CHECK_EQ(spy.calls.size(), 0);                      // group hâlâ açık
 
-  e.on_add_order(200, add(4, SIDE_BUY, 10, 1048));    // group 200 opens
+  e.on_add_order(200, add(4, SIDE_BUY, 10, 1048));    // group 200 açılıyor
   REQUIRE(spy.calls.size() == 1);
-  CHECK_EQ(spy.calls[0].ts, 100ull);                  // the group that closed
+  CHECK_EQ(spy.calls[0].ts, 100ull);                  // kapanan group
 }
 
 TEST(engine_closes_a_group_before_applying_the_message_that_ends_it) {
-  // The new message belongs to the next group. If it were applied first, the
-  // strategy would see it as part of the group it is closing.
+  // Yeni message bir sonraki group'a ait. Önce uygulansaydı strategy onu,
+  // kapatmakta olduğu group'un parçası olarak görürdü.
   Config c = cfg(); OrderBook book(c); SpyStrategy spy; Position pos = 0;
   Engine<SpyStrategy> e(book, spy, pos);
 
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
-  e.on_add_order(200, add(2, SIDE_BUY, 10, 1060));    // a much better bid
+  e.on_add_order(200, add(2, SIDE_BUY, 10, 1060));    // çok daha iyi bir bid
 
   REQUIRE(spy.calls.size() == 1);
   CHECK(spy.calls[0].has_bid);
-  CHECK_EQ(spy.calls[0].bid, 1049);                   // not 1060
+  CHECK_EQ(spy.calls[0].bid, 1049);                   // 1060 değil
 }
 
 TEST(engine_finalize_closes_the_last_group) {
@@ -89,7 +90,7 @@ TEST(engine_finalize_closes_the_last_group) {
 
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
   e.on_add_order(200, add(2, SIDE_BUY, 10, 1050));
-  CHECK_EQ(spy.calls.size(), 1);                      // only group 100 so far
+  CHECK_EQ(spy.calls.size(), 1);                      // şimdilik sadece group 100
 
   e.finalize();
 
@@ -102,13 +103,13 @@ TEST(engine_finalize_is_safe_to_call_twice_or_on_nothing) {
   Config c = cfg(); OrderBook book(c); SpyStrategy spy; Position pos = 0;
   Engine<SpyStrategy> e(book, spy, pos);
 
-  e.finalize();                                       // nothing was ever fed
+  e.finalize();                                       // hiç veri verilmedi
   CHECK_EQ(spy.calls.size(), 0);
 
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
   e.finalize();
   e.finalize();
-  CHECK_EQ(spy.calls.size(), 1);                      // not twice
+  CHECK_EQ(spy.calls.size(), 1);                      // iki kez değil
 }
 
 TEST(engine_treats_a_state_message_as_part_of_the_timeline) {
@@ -116,7 +117,7 @@ TEST(engine_treats_a_state_message_as_part_of_the_timeline) {
   Engine<SpyStrategy> e(book, spy, pos);
 
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
-  e.on_book_state(200, st(STATE_SUREKLI_ISLEM));      // different timestamp
+  e.on_book_state(200, st(STATE_SUREKLI_ISLEM));      // farklı timestamp
 
   CHECK_EQ(spy.calls.size(), 1);
   CHECK_EQ(spy.calls[0].ts, 100ull);
@@ -127,11 +128,11 @@ TEST(engine_passes_the_live_position_through) {
   Engine<SpyStrategy> e(book, spy, pos);
 
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
-  pos = 350;                                          // as a fill would
+  pos = 350;                                          // bir fill'in yapacağı gibi
   e.on_add_order(200, add(2, SIDE_BUY, 10, 1048));
 
   REQUIRE(spy.calls.size() == 1);
-  CHECK_EQ(spy.calls[0].position, 350);               // read, not copied early
+  CHECK_EQ(spy.calls[0].position, 350);               // okunuyor, erkenden kopyalanmıyor
 }
 
 TEST(engine_remembers_a_sequence_gap_until_a_session_restores_it) {
@@ -141,7 +142,7 @@ TEST(engine_remembers_a_sequence_gap_until_a_session_restores_it) {
   CHECK(e.sequence_ok());
   e.on_add_order(100, add(1, SIDE_BUY, 10, 1049));
 
-  e.on_sequence_reliable(false);                      // the framing layer saw a gap
+  e.on_sequence_reliable(false);                      // framing layer'ı bir sequence gap gördü
   e.on_add_order(200, add(2, SIDE_BUY, 10, 1048));
 
   REQUIRE(spy.calls.size() == 1);
@@ -154,15 +155,15 @@ TEST(engine_counts_a_group_that_ends_crossed) {
   Engine<SpyStrategy> e(book, spy, pos);
 
   e.on_add_order(100, add(1, SIDE_BUY,  10, 1050));
-  e.on_add_order(100, add(2, SIDE_SELL, 10, 1049));   // ask under bid
+  e.on_add_order(100, add(2, SIDE_SELL, 10, 1049));   // ask, bid'in altında
   e.finalize();
 
   CHECK_EQ(e.stats().invariant_breaks, 1ull);
 }
 
 TEST(engine_does_not_complain_about_a_cross_inside_a_group) {
-  // Moving a price from one side to the other is two messages. Between them
-  // the book is crossed, and that is normal.
+  // Bir price'ı bir side'dan diğerine taşımak iki message. Aralarında book cross
+  // oluyor, ve bu normal.
   Config c = cfg(); OrderBook book(c); SpyStrategy spy; Position pos = 0;
   Engine<SpyStrategy> e(book, spy, pos);
 
@@ -170,12 +171,12 @@ TEST(engine_does_not_complain_about_a_cross_inside_a_group) {
   e.on_add_order(100, add(2, SIDE_BUY,  10, 1049));
   e.on_add_order(100, add(3, SIDE_SELL, 10, 1051));
 
-  e.on_add_order   (200, add(4, SIDE_SELL, 10, 1049));  // crossed: bid 1049, ask 1049
-  e.on_order_delete(200, del(2, SIDE_BUY));             // uncrossed: bid 1048, ask 1049
+  e.on_add_order   (200, add(4, SIDE_SELL, 10, 1049));  // cross: bid 1049, ask 1049
+  e.on_order_delete(200, del(2, SIDE_BUY));             // cross çözüldü: bid 1048, ask 1049
   e.finalize();
 
   CHECK_EQ(e.stats().groups, 2ull);
-  CHECK_EQ(e.stats().invariant_breaks, 0ull);         // both groups ended clean
+  CHECK_EQ(e.stats().invariant_breaks, 0ull);         // iki group da temiz bitti
 }
 
 TEST(engine_drives_the_real_strategy_end_to_end) {
@@ -191,7 +192,7 @@ TEST(engine_drives_the_real_strategy_end_to_end) {
   e.on_add_order (20, add(2, SIDE_SELL,  600, 1050));
   e.on_add_order (20, add(3, SIDE_SELL,  800, 1051));
 
-  e.on_order_delete(30, del(2, SIDE_SELL));   // 1050 empties in group 30
+  e.on_order_delete(30, del(2, SIDE_SELL));   // 1050, group 30'da boşalıyor
   e.finalize();
 
   REQUIRE(sink.intents.size() == 1);

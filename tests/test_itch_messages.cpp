@@ -72,8 +72,8 @@ TEST(decode_book_state_maps_both_states_the_strategy_cares_about) {
 }
 
 TEST(decode_book_state_treats_an_unknown_name_as_other) {
-  // Any state that is neither continuous trading nor end of day must not be
-  // mistaken for one of them: the strategy may only run in P_SUREKLI_ISLEM.
+  // Ne continuous trading ne de gün sonu olan bir state, bu ikisinden biriyle
+  // karıştırılmamalı: strategy sadece P_SUREKLI_ISLEM'de çalışabilir.
   Bytes m = book_state(1u, 73616u, "P_ACILIS_SEANSI");
   ByteReader r(&m[0], m.size());
   REQUIRE(r.has(LEN_BOOK_STATE));
@@ -84,8 +84,8 @@ TEST(decode_book_state_treats_an_unknown_name_as_other) {
 }
 
 TEST(a_state_name_that_only_shares_a_prefix_is_not_a_match) {
-  // "P_SUREKLI" padded out must not match "P_SUREKLI_ISLEM" padded out:
-  // the comparison covers all 20 bytes, padding included.
+  // Pad'lenmiş "P_SUREKLI", pad'lenmiş "P_SUREKLI_ISLEM" ile eşleşmemeli:
+  // karşılaştırma pad dahil 20 byte'ın tamamını kapsıyor.
   Bytes m = book_state(1u, 73616u, "P_SUREKLI");
   ByteReader r(&m[0], m.size());
   REQUIRE(r.has(LEN_BOOK_STATE));
@@ -98,7 +98,7 @@ TEST(a_state_name_that_only_shares_a_prefix_is_not_a_match) {
 TEST(side_from_char_rejects_anything_that_is_not_b_or_s) {
   CHECK_EQ(side_from_char('B'), SIDE_BUY);
   CHECK_EQ(side_from_char('S'), SIDE_SELL);
-  CHECK_EQ(side_from_char('b'), SIDE_INVALID);   // case matters
+  CHECK_EQ(side_from_char('b'), SIDE_INVALID);   // büyük/küçük harf önemli
   CHECK_EQ(side_from_char('X'), SIDE_INVALID);
   CHECK_EQ(side_from_char(0),   SIDE_INVALID);
   CHECK_EQ(side_from_char(0xFF),SIDE_INVALID);
@@ -111,14 +111,14 @@ TEST(expected_length_covers_handled_types_and_rejects_the_rest) {
   CHECK_EQ(expected_length(MSG_ORDER_EXECUTED), LEN_ORDER_EXECUTED);
   CHECK_EQ(expected_length(MSG_ORDER_DELETE),   LEN_ORDER_DELETE);
 
-  CHECK_EQ(expected_length(MSG_EXECUTED_PRICE), 0);   // 'C', skipped
-  CHECK_EQ(expected_length(MSG_BOOK_FLUSH),     0);   // 'Y', skipped
+  CHECK_EQ(expected_length(MSG_EXECUTED_PRICE), 0);   // 'C', skip ediliyor
+  CHECK_EQ(expected_length(MSG_BOOK_FLUSH),     0);   // 'Y', skip ediliyor
   CHECK_EQ(expected_length('R'),                0);
   CHECK_EQ(expected_length(0),                  0);
 }
 
 TEST(the_book_id_offset_differs_between_state_and_the_order_messages) {
-  // The early filter depends on this: 'O' carries it at 5, 'A'/'E'/'D' at 13.
+  // Erken filtre buna dayanıyor: 'O' onu 5'te, 'A'/'E'/'D' ise 13'te taşıyor.
   Bytes s = book_state(1u, 73616u, "P_SUREKLI_ISLEM");
   ByteReader rs(&s[0], s.size());
   CHECK_EQ(rs.be32(OFF_STATE_BOOK_ID), 73616u);

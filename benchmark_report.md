@@ -17,6 +17,8 @@ with the configuration supplied alongside it.
 | Timing, per datagram | `rdtsc`, 0.238 ns per cycle                                      |
 | Warm-up              | one full unmeasured pass before the first measurement            |
 | Iterations           | 50                                                               |
+| -------------------- | ---------------------------------------------------------------- |
+|                      |                                                                  |
 
 **This is a virtual machine.** WSL2 runs under a Hyper-V hypervisor, so the
 Windows host can deschedule the whole guest regardless of pinning. That does

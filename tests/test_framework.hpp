@@ -1,12 +1,12 @@
 #ifndef LLOB_TESTS_FRAMEWORK_HPP
 #define LLOB_TESTS_FRAMEWORK_HPP
 
-// Minimal assertion harness. No external dependency, so the assignment's
-// "declare your external dependencies" list stays empty.
+// Minimal bir assertion harness'i. Hiç external dependency yok, böylece
+// assignment'ın "external dependency'lerini bildir" listesi boş kalıyor.
 //
-// Write a case with TEST(name) { ... } and assert inside it with CHECK,
-// CHECK_EQ or REQUIRE. Cases register themselves; nothing has to be wired
-// into main() by hand.
+// Bir case'i TEST(name) { ... } ile yazıyorsun ve içinde CHECK, CHECK_EQ ya da
+// REQUIRE ile assert ediyorsun. Case'ler kendilerini kaydediyor; elle main()'e
+// bağlanacak hiçbir şey yok.
 
 #include <cstdio>
 #include <cstddef>
@@ -19,8 +19,9 @@ struct TestCase {
     void (*fn)();
 };
 
-// Function-local statics: the registry is built on first use, so a TEST in
-// another translation unit cannot register into a not-yet-constructed vector.
+// Function-local static'ler: registry ilk kullanımda kuruluyor, yani başka bir
+// translation unit'teki bir TEST henüz inşa edilmemiş bir vector'e kayıt
+// olamıyor.
 inline std::vector<TestCase>& registry() {
     static std::vector<TestCase> cases;
     return cases;
@@ -61,13 +62,14 @@ inline int run_all() {
 
 } // namespace llobtest
 
-// Declares the body, registers it, then opens the body for you to fill.
+// Gövdeyi declare ediyor, kaydediyor, sonra doldurman için gövdeyi açıyor.
 #define TEST(name)                                                            \
     static void llob_test_##name();                                           \
     static llobtest::Registrar llob_reg_##name(#name, llob_test_##name);      \
     static void llob_test_##name()
 
-// Records a failure and keeps going, so one run reports every broken case.
+// Hatayı kaydedip devam ediyor, böylece tek bir run bozuk olan her case'i
+// raporluyor.
 #define CHECK(cond)                                                           \
     do {                                                                      \
         if (!(cond)) {                                                        \
@@ -77,7 +79,7 @@ inline int run_all() {
         }                                                                     \
     } while (0)
 
-// Prints both sides, because "not equal" without the values tells you nothing.
+// İki tarafı da basıyor, çünkü değerler olmadan "eşit değil" hiçbir şey anlatmıyor.
 #define CHECK_EQ(a, b)                                                        \
     do {                                                                      \
         long long llob_va = (long long)(a);                                   \
@@ -89,7 +91,7 @@ inline int run_all() {
         }                                                                     \
     } while (0)
 
-// For preconditions: abandons the case instead of cascading failures.
+// Precondition'lar için: arka arkaya hata üretmek yerine case'i terk ediyor.
 #define REQUIRE(cond)                                                         \
     do {                                                                      \
         if (!(cond)) {                                                        \

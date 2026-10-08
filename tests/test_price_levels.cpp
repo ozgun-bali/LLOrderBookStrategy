@@ -14,7 +14,7 @@ TEST(levels_centres_the_band_on_the_first_price) {
   L.add_order(SIDE_BUY, 10000, 100);
 
   CHECK(L.have_base());
-  CHECK_EQ(L.base_price(), 10000 - (Price)(LEVELS / 2));   // room on both sides
+  CHECK_EQ(L.base_price(), 10000 - (Price)(LEVELS / 2));   // iki yanda da yer var
 }
 
 TEST(levels_tracks_quantity_and_count_separately) {
@@ -28,7 +28,7 @@ TEST(levels_tracks_quantity_and_count_separately) {
 }
 
 TEST(levels_partial_fill_lowers_quantity_but_not_count) {
-  // The order is still resting here, so it still counts as one.
+  // Order hâlâ burada bekliyor, yani hâlâ bir tane sayılıyor.
   PriceLevels L(LEVELS);
   L.add_order(SIDE_BUY, 1049, 500);
   L.add_order(SIDE_BUY, 1049, 300);
@@ -65,8 +65,9 @@ TEST(levels_a_level_dies_when_its_count_reaches_zero) {
 }
 
 TEST(levels_a_zero_quantity_order_keeps_the_level_alive) {
-  // An undisclosed order shows a visible quantity of zero. Deciding emptiness
-  // from the quantity would wrongly kill this level and move the best price.
+  // Undisclosed bir order'ın görünür quantity'si sıfır. Boşluğa quantity'ye
+  // bakarak karar vermek bu level'ı haksız yere öldürür ve best price'ı
+  // kaydırırdı.
   PriceLevels L(LEVELS);
   L.add_order(SIDE_BUY, 1049, 0);
 
@@ -98,10 +99,10 @@ TEST(levels_a_better_price_takes_over_the_best_immediately) {
   L.add_order(SIDE_BUY, 1047, 10);
   CHECK_EQ(L.best(SIDE_BUY), 1047);
 
-  L.add_order(SIDE_BUY, 1049, 10);     // higher bid wins
+  L.add_order(SIDE_BUY, 1049, 10);     // yüksek bid kazanıyor
   CHECK_EQ(L.best(SIDE_BUY), 1049);
 
-  L.add_order(SIDE_BUY, 1048, 10);     // worse than the current best
+  L.add_order(SIDE_BUY, 1048, 10);     // mevcut best'ten kötü
   CHECK_EQ(L.best(SIDE_BUY), 1049);
 }
 
@@ -113,7 +114,7 @@ TEST(levels_best_falls_back_to_the_next_level_when_the_top_empties) {
   CHECK_EQ(L.best(SIDE_BUY), 1049);
 
   L.remove_order(SIDE_BUY, 1049, 30);
-  CHECK_EQ(L.best(SIDE_BUY), 1048);    // bids walk downward
+  CHECK_EQ(L.best(SIDE_BUY), 1048);    // bid'ler aşağı doğru yürüyor
 
   L.remove_order(SIDE_BUY, 1048, 20);
   CHECK_EQ(L.best(SIDE_BUY), 1047);
@@ -148,15 +149,15 @@ TEST(levels_emptying_a_level_that_is_not_the_best_leaves_it_alone) {
 }
 
 TEST(levels_scan_crosses_bitset_words) {
-  // 64 levels fit in one 64-bit word. Putting the next level far away forces
-  // the scan to step over whole empty words.
+  // Bir 64 bit word'e 64 level sığıyor. Bir sonraki level'ı uzağa koymak scan'i
+  // komple boş word'lerin üzerinden atlamaya zorluyor.
   PriceLevels L(LEVELS);
-  L.add_order(SIDE_BUY, 10000, 10);     // base is fixed here
-  L.add_order(SIDE_BUY, 10200, 20);     // 200 ticks up: three words away
+  L.add_order(SIDE_BUY, 10000, 10);     // base burada sabitleniyor
+  L.add_order(SIDE_BUY, 10200, 20);     // 200 tick yukarı: üç word uzakta
   CHECK_EQ(L.best(SIDE_BUY), 10200);
 
   L.remove_order(SIDE_BUY, 10200, 20);
-  CHECK_EQ(L.best(SIDE_BUY), 10000);    // found across the gap
+  CHECK_EQ(L.best(SIDE_BUY), 10000);    // boşluğun ötesinde bulundu
 
   L.add_order(SIDE_SELL, 10500, 10);
   L.add_order(SIDE_SELL, 10300, 20);
@@ -168,7 +169,7 @@ TEST(levels_scan_crosses_bitset_words) {
 TEST(levels_keep_the_two_sides_independent) {
   PriceLevels L(LEVELS);
   L.add_order(SIDE_BUY,  1049, 100);
-  L.add_order(SIDE_SELL, 1049, 200);     // same price, other side
+  L.add_order(SIDE_SELL, 1049, 200);     // aynı price, diğer side
 
   CHECK_EQ(L.quantity_at(SIDE_BUY,  1049), 100ull);
   CHECK_EQ(L.quantity_at(SIDE_SELL, 1049), 200ull);
@@ -182,7 +183,7 @@ TEST(levels_keep_the_two_sides_independent) {
 
 TEST(levels_flag_a_price_outside_the_band_instead_of_writing_past_the_array) {
   PriceLevels L(LEVELS);
-  L.add_order(SIDE_BUY, 10000, 10);      // band becomes 9488 .. 10511
+  L.add_order(SIDE_BUY, 10000, 10);      // band 9488 .. 10511 oluyor
   CHECK(!L.out_of_band());
 
   CHECK(!L.add_order(SIDE_BUY, 99999, 10));
@@ -199,10 +200,10 @@ TEST(levels_flag_a_price_below_the_band_too) {
 }
 
 TEST(levels_handle_the_sample_feeds_price_band) {
-  // The target book traded 17,060 to 20,840 that day: 3,780 ticks against the
-  // 16,384 levels the config allows.
+  // Target book o gün 17.060 ile 20.840 arasında işlem gördü: config'in izin
+  // verdiği 16.384 level'a karşı 3.780 tick.
   PriceLevels L(16384);
-  L.add_order(SIDE_BUY, 19000, 100);     // first price seen, band centres here
+  L.add_order(SIDE_BUY, 19000, 100);     // görülen ilk price, band buraya ortalanıyor
 
   CHECK(L.add_order(SIDE_BUY, 17060, 10));
   CHECK(L.add_order(SIDE_SELL, 20840, 10));

@@ -26,8 +26,8 @@ TEST(pool_returns_null_for_an_id_it_does_not_have) {
 }
 
 TEST(pool_keeps_the_two_sides_apart) {
-  // ITCH ids are unique per book AND side, so the same id can be active on both
-  // sides at once. They must not collide.
+  // ITCH id'leri book VE side bazında unique, yani aynı id aynı anda iki side'da
+  // da aktif olabiliyor. Birbirlerine çarpmamaları gerekiyor.
   OrderPool p(16);
   CHECK_EQ(p.insert(SIDE_BUY,  77, 104900, 500), INSERT_OK);
   CHECK_EQ(p.insert(SIDE_SELL, 77, 105100, 300), INSERT_OK);
@@ -49,7 +49,7 @@ TEST(pool_rejects_a_duplicate_id_on_the_same_side) {
 
   const Order* o = p.find(SIDE_BUY, 77);
   REQUIRE(o != 0);
-  CHECK_EQ(o->price, 100);          // the first one is untouched
+  CHECK_EQ(o->price, 100);          // ilkine dokunulmadı
   CHECK_EQ(p.size(), 1);
 }
 
@@ -62,7 +62,7 @@ TEST(pool_reports_full_instead_of_overwriting) {
   CHECK_EQ(p.insert(SIDE_BUY, 5, 100, 10), INSERT_FULL);
   CHECK_EQ(p.size(), 4);
 
-  for (OrderId i = 1; i <= 4; ++i)   // nothing was damaged
+  for (OrderId i = 1; i <= 4; ++i)   // hiçbir şey bozulmadı
     CHECK(p.find(SIDE_BUY, i) != 0);
 }
 
@@ -86,8 +86,8 @@ TEST(pool_remove_reports_whether_it_found_anything) {
   p.insert(SIDE_BUY, 77, 100, 10);
 
   CHECK(p.remove(SIDE_BUY, 77));
-  CHECK(!p.remove(SIDE_BUY, 77));   // already gone
-  CHECK(!p.remove(SIDE_BUY, 99));   // never existed
+  CHECK(!p.remove(SIDE_BUY, 77));   // zaten silinmişti
+  CHECK(!p.remove(SIDE_BUY, 99));   // hiç var olmadı
   CHECK_EQ(p.size(), 0);
 }
 
@@ -103,8 +103,8 @@ TEST(pool_removing_one_side_leaves_the_other) {
 }
 
 TEST(pool_lets_the_caller_change_the_remaining_quantity) {
-  // This is how an Order Executed message is applied: find, subtract, and the
-  // change has to stick.
+  // Bir Order Executed message'ı tam olarak böyle uygulanıyor: bul, çıkar, ve
+  // değişiklik kalıcı olmak zorunda.
   OrderPool p(16);
   p.insert(SIDE_BUY, 77, 100, 500);
 
@@ -124,18 +124,18 @@ TEST(pool_pointers_stay_valid_while_other_orders_come_and_go) {
   for (OrderId i = 2; i < 40; ++i) p.insert(SIDE_BUY, i, 100, 10);
   for (OrderId i = 2; i < 40; ++i) p.remove(SIDE_BUY, i);
 
-  CHECK_EQ(first->id, 1ull);              // the slot array never moves
+  CHECK_EQ(first->id, 1ull);              // slot array'i hiç yer değiştirmiyor
   CHECK_EQ(first->remaining, 500ull);
   CHECK_EQ(p.find(SIDE_BUY, 1), first);
 }
 
 TEST(pool_survives_a_deletion_in_the_middle_of_a_probe_chain) {
-  // The classic open-addressing trap. Ids 1, 1+N and 1+2N land on the same
-  // home bucket, so the second and third sit further along the chain. Removing
-  // the first must not make the others unreachable.
+  // Klasik open-addressing tuzağı. 1, 1+N ve 1+2N id'leri aynı home bucket'a
+  // düşüyor, yani ikincisi ve üçüncüsü zincirin ilerisinde duruyor. İlkini
+  // silmek diğerlerini ulaşılamaz hale getirmemeli.
   const std::size_t CAP = 8;
   OrderPool p(CAP);
-  const OrderId STEP = 16;       // table is 16 buckets for capacity 8
+  const OrderId STEP = 16;       // capacity 8 için table 16 bucket
 
   CHECK_EQ(p.insert(SIDE_BUY, 1,            100, 10), INSERT_OK);
   CHECK_EQ(p.insert(SIDE_BUY, 1 + STEP,     200, 20), INSERT_OK);
@@ -151,8 +151,8 @@ TEST(pool_survives_a_deletion_in_the_middle_of_a_probe_chain) {
 }
 
 TEST(pool_handles_many_inserts_and_removals_without_losing_anything) {
-  // Fills, empties and refills repeatedly. If deletion left tombstones or broke
-  // a chain, something would go missing here.
+  // Tekrar tekrar dolduruyor, boşaltıyor, yeniden dolduruyor. Delete tombstone
+  // bıraksaydı ya da bir zinciri kırsaydı burada bir şey kaybolurdu.
   const std::size_t CAP = 256;
   OrderPool p(CAP);
 
@@ -181,10 +181,10 @@ TEST(pool_removing_from_the_middle_of_a_full_table_keeps_the_rest_findable) {
   for (std::size_t i = 0; i < CAP; ++i)
     p.insert(SIDE_BUY, i * 7 + 3, (Price)i, 1);
 
-  for (std::size_t i = 0; i < CAP; i += 2)      // drop every other one
+  for (std::size_t i = 0; i < CAP; i += 2)      // bir atlayarak sil
     CHECK(p.remove(SIDE_BUY, i * 7 + 3));
 
-  for (std::size_t i = 1; i < CAP; i += 2)      // the rest must still be there
+  for (std::size_t i = 1; i < CAP; i += 2)      // geri kalanı hâlâ orada olmalı
     CHECK(p.find(SIDE_BUY, i * 7 + 3) != 0);
   for (std::size_t i = 0; i < CAP; i += 2)
     CHECK(p.find(SIDE_BUY, i * 7 + 3) == 0);

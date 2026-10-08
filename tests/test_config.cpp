@@ -7,7 +7,7 @@ using namespace llob;
 
 namespace {
 
-// A complete, valid file. Individual tests change one line at a time.
+// Eksiksiz ve geçerli bir dosya. Tek tek testler her seferinde bir satırı değiştiriyor.
 const char* GOOD =
     "# Statech - example configuration\n"
     "target_order_book_id = 73616\n"
@@ -36,8 +36,8 @@ TEST(config_reads_every_required_key) {
 }
 
 TEST(config_keeps_a_negative_minimum_position) {
-  // A short limit is a negative number. Reading it as unsigned would wrap and
-  // the SELL quantity formula would then allow unlimited selling.
+  // Short limiti negatif bir sayı. Unsigned okumak onu wrap ettirirdi ve SELL
+  // quantity formülü sınırsız satışa izin verirdi.
   Config c; std::string err;
   REQUIRE(parse_config(GOOD, c, err));
   CHECK(c.minimum_position < 0);
@@ -48,8 +48,8 @@ TEST(config_ignores_comments_blank_lines_and_spacing) {
   const char* text =
       "\n"
       "   # a comment with leading spaces\n"
-      "target_order_book_id=73616\n"            // no spaces at all
-      "   tick_size   =   1   \n"               // spaces everywhere
+      "target_order_book_id=73616\n"            // hiç boşluk yok
+      "   tick_size   =   1   \n"               // her yerde boşluk
       "order_quantity = 100\n"
       "minimum_position = -5\n"
       "maximum_position = 5\n"
@@ -69,14 +69,15 @@ TEST(config_rejects_a_missing_key_instead_of_defaulting) {
       "order_quantity = 100\n"
       "minimum_position = -10\n"
       "maximum_position = 10\n"
-      "max_active_orders = 10\n";       // max_price_levels is absent
+      "max_active_orders = 10\n";       // max_price_levels eksik
 
   CHECK(!parse_config(text, c, err));
   CHECK(err.find("max_price_levels") != std::string::npos);
 }
 
 TEST(config_rejects_an_unknown_key) {
-  // Catches typos. Silently ignoring the line would leave the real key unset.
+  // Yazım hatalarını yakalıyor. Satırı sessizce yok saymak gerçek key'i set
+  // edilmemiş bırakırdı.
   Config c; std::string err;
   std::string text = std::string(GOOD) + "max_price_level = 100\n";
 
@@ -99,7 +100,7 @@ TEST(config_rejects_a_line_without_an_equals_sign) {
 }
 
 TEST(config_reads_the_file_shipped_with_the_assignment) {
-  // Exactly as supplied, including the -1 capacities and the blank lines.
+  // Bize verildiği haliyle: -1 capacity'ler ve boş satırlar dahil.
   Config c; std::string err;
   const char* text =
       "order_quantity       = 100\n"
@@ -118,15 +119,16 @@ TEST(config_reads_the_file_shipped_with_the_assignment) {
 
   REQUIRE(parse_config(text, c, err));
   CHECK_EQ(c.order_quantity, 100ull);
-  CHECK_EQ(c.minimum_position, 0);        // no short selling
+  CHECK_EQ(c.minimum_position, 0);        // short satış yok
   CHECK_EQ(c.maximum_position, 1000);
-  CHECK_EQ(c.tick_size, 10);              // not the 1 the PDF shows
+  CHECK_EQ(c.tick_size, 10);              // PDF'teki 1 değil
   CHECK_EQ(c.target_order_book_id, 73616u);
 }
 
 TEST(config_minus_one_turns_a_capacity_limit_off) {
-  // The limit goes away, but a fixed-capacity design still has to allocate
-  // something, so a documented default takes over.
+  // Limit ortadan kalkıyor, ama fixed-capacity bir tasarımın yine de bir şey
+  // allocate etmesi gerekiyor; o yüzden dokümante edilmiş bir default devreye
+  // giriyor.
   Config c; std::string err;
   const char* text =
       "target_order_book_id = 73616\n"
@@ -163,7 +165,7 @@ TEST(config_an_explicit_capacity_still_counts_as_a_limit) {
 }
 
 TEST(config_still_rejects_other_non_positive_capacities) {
-  // -1 is the one special value. -2 or 0 are simply unusable.
+  // Tek özel değer -1. -2 ya da 0 kullanılamaz, o kadar.
   Config c; std::string err;
   CHECK(!parse_config("max_active_orders = 0\n", c, err));
   CHECK(!parse_config("max_active_orders = -2\n", c, err));
@@ -173,10 +175,10 @@ TEST(config_still_rejects_other_non_positive_capacities) {
 TEST(config_rejects_values_that_cannot_work) {
   Config c; std::string err;
 
-  CHECK(!parse_config("tick_size = 0\n", c, err));            // would divide by zero
+  CHECK(!parse_config("tick_size = 0\n", c, err));            // sıfıra bölme olurdu
   CHECK(!parse_config("tick_size = -1\n", c, err));
-  CHECK(!parse_config("order_quantity = 0\n", c, err));       // no order could be sent
-  CHECK(!parse_config("max_active_orders = 0\n", c, err));    // pool with no room
+  CHECK(!parse_config("order_quantity = 0\n", c, err));       // hiçbir order gönderilemezdi
+  CHECK(!parse_config("max_active_orders = 0\n", c, err));    // hiç yeri olmayan bir pool
   CHECK(!parse_config("max_price_levels = 0\n", c, err));
 }
 
@@ -187,7 +189,7 @@ TEST(config_rejects_a_minimum_position_above_the_maximum) {
       "tick_size = 1\n"
       "order_quantity = 100\n"
       "minimum_position = 500\n"
-      "maximum_position = 100\n"        // the wrong way round
+      "maximum_position = 100\n"        // ters çevrilmiş
       "max_active_orders = 10\n"
       "max_price_levels = 10\n";
 
@@ -208,7 +210,7 @@ TEST(config_reports_the_line_number_of_the_problem) {
   const char* text =
       "target_order_book_id = 73616\n"
       "tick_size = 1\n"
-      "order_quantity = oops\n";        // line 3
+      "order_quantity = oops\n";        // 3. satır
 
   CHECK(!parse_config(text, c, err));
   CHECK(err.find("line 3") != std::string::npos);

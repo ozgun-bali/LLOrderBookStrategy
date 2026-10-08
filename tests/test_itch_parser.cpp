@@ -13,7 +13,7 @@ namespace {
 const OrderBookId TARGET = 73616u;
 const OrderBookId OTHER  = 11111u;
 
-// Stands in for the order book so dispatch can be tested on its own.
+// Order book'un yerine geçiyor ki dispatch tek başına test edilebilsin.
 struct Sink {
     struct Ev { char kind; Timestamp ts; OrderId id; Side side;
                 Quantity qty; Price price; BookState state; };
@@ -74,7 +74,7 @@ TEST(parser_consumes_the_seconds_message_without_passing_it_on) {
   feed(p, seconds(1000u));
 
   CHECK(p.have_second());
-  CHECK_EQ(sink.ev.size(), 0);                  // timekeeping only
+  CHECK_EQ(sink.ev.size(), 0);                  // sadece zaman tutuyor
   CHECK_EQ(p.stats().seconds_messages, 1ull);
   CHECK_EQ(p.stats().target_messages, 0ull);
 }
@@ -90,15 +90,15 @@ TEST(parser_composes_the_timestamp_from_seconds_and_nanos) {
 }
 
 TEST(parser_separates_identical_nanos_in_different_seconds) {
-  // The nanosecond field restarts every second. Grouping on it alone would
-  // merge these two into one logical group, and the strategy would run once
-  // where it must run twice.
+  // Nanosecond field'ı her saniye baştan başlıyor. Sadece ona bakarak gruplamak
+  // bu ikisini tek bir mantıksal group'ta birleştirirdi, ve strategy iki kez
+  // çalışması gereken yerde bir kez çalışırdı.
   Sink sink; ItchParser<Sink> p(sink, TARGET);
 
   feed(p, seconds(1000u));
   feed(p, deleted(500u, 1ull, TARGET, SIDE_BUY));
   feed(p, seconds(1001u));
-  feed(p, deleted(500u, 2ull, TARGET, SIDE_BUY));   // same 500 nanos
+  feed(p, deleted(500u, 2ull, TARGET, SIDE_BUY));   // aynı 500 nanos
 
   REQUIRE(sink.ev.size() == 2);
   CHECK(sink.ev[0].ts != sink.ev[1].ts);
@@ -114,15 +114,15 @@ TEST(parser_drops_messages_belonging_to_another_order_book) {
   feed(p, book_state(13u, OTHER, "P_SUREKLI_ISLEM"));
   feed(p, add_order(14u, 2ull, TARGET, SIDE_BUY, 100ull, 100));
 
-  REQUIRE(sink.ev.size() == 1);                 // only the target one
+  REQUIRE(sink.ev.size() == 1);                 // sadece target olan
   CHECK_EQ(sink.ev[0].id, 2ull);
-  CHECK_EQ(p.stats().messages, 5ull);           // all five were seen
-  CHECK_EQ(p.stats().target_messages, 1ull);    // one was ours
+  CHECK_EQ(p.stats().messages, 5ull);           // beşi de görüldü
+  CHECK_EQ(p.stats().target_messages, 1ull);    // biri bizimdi
 }
 
 TEST(parser_filters_book_state_at_its_own_offset) {
-  // 'O' carries the book id at offset 5, not 13. Using the wrong offset would
-  // read into the state name and drop every state message.
+  // 'O' book id'yi 13'te değil, offset 5'te taşıyor. Yanlış offset kullanmak
+  // state adının içine okurdu ve her state message'ını düşürürdü.
   Sink sink; ItchParser<Sink> p(sink, TARGET);
 
   feed(p, book_state(1u, TARGET, "P_SUREKLI_ISLEM"));
@@ -142,14 +142,14 @@ TEST(parser_skips_types_it_does_not_handle) {
 
   CHECK_EQ(sink.ev.size(), 0);
   CHECK_EQ(p.stats().skipped_types, 3ull);
-  CHECK_EQ(p.stats().invalid_messages, 0ull);   // skipped is not malformed
+  CHECK_EQ(p.stats().invalid_messages, 0ull);   // skip edilmiş olmak bozuk olmak değil
 }
 
 TEST(parser_rejects_a_handled_type_with_the_wrong_length) {
   Sink sink; ItchParser<Sink> p(sink, TARGET);
 
   Bytes m = add_order(10u, 1ull, TARGET, SIDE_BUY, 100ull, 100);
-  m.resize(40);                                 // 'A' must be exactly 45
+  m.resize(40);                                 // 'A' tam olarak 45 olmak zorunda
   feed(p, m);
 
   CHECK_EQ(sink.ev.size(), 0);
@@ -157,8 +157,8 @@ TEST(parser_rejects_a_handled_type_with_the_wrong_length) {
 }
 
 TEST(parser_rejects_a_side_byte_that_is_neither_b_nor_s) {
-  // Side becomes an array index downstream, so a corrupt byte must never reach
-  // the order book.
+  // Side aşağıda bir array index'ine dönüşüyor, yani bozuk bir byte order book'a
+  // asla ulaşmamalı.
   Sink sink; ItchParser<Sink> p(sink, TARGET);
 
   Bytes m = add_order(10u, 1ull, TARGET, SIDE_BUY, 100ull, 100);
@@ -167,16 +167,16 @@ TEST(parser_rejects_a_side_byte_that_is_neither_b_nor_s) {
 
   CHECK_EQ(sink.ev.size(), 0);
   CHECK_EQ(p.stats().invalid_messages, 1ull);
-  CHECK_EQ(p.stats().target_messages, 1ull);    // it was ours, it was just broken
+  CHECK_EQ(p.stats().target_messages, 1ull);    // bizimdi, sadece bozuktu
 }
 
 TEST(parser_counts_messages_that_arrive_before_any_seconds_marker) {
   Sink sink; ItchParser<Sink> p(sink, TARGET);
 
-  feed(p, deleted(500u, 1ull, TARGET, SIDE_BUY));   // no 'T' yet
+  feed(p, deleted(500u, 1ull, TARGET, SIDE_BUY));   // henüz 'T' yok
 
   REQUIRE(sink.ev.size() == 1);
-  CHECK_EQ(sink.ev[0].ts, 500ull);              // second treated as 0
+  CHECK_EQ(sink.ev[0].ts, 500ull);              // second 0 kabul ediliyor
   CHECK_EQ(p.stats().before_first_second, 1ull);
   CHECK(!p.have_second());
 }
@@ -189,13 +189,13 @@ TEST(parser_runs_end_to_end_behind_mold_udp64) {
   Bytes wire = serialize(make_packet("BIST01", 1, {
       seconds(1000u),
       add_order(10u, 7ull, TARGET, SIDE_BUY, 500ull, 104900),
-      add_order(10u, 8ull, OTHER,  SIDE_BUY, 500ull, 104900),   // other book
+      add_order(10u, 8ull, OTHER,  SIDE_BUY, 500ull, 104900),   // başka book
       deleted  (20u, 7ull, TARGET, SIDE_BUY)
   }));
   mold.process_datagram(&wire[0], wire.size());
 
-  CHECK_EQ(mold.stats().messages, 4ull);        // four blocks framed
-  REQUIRE(sink.ev.size() == 2);                 // two survived the filter
+  CHECK_EQ(mold.stats().messages, 4ull);        // dört block frame'lendi
+  REQUIRE(sink.ev.size() == 2);                 // ikisi filtreden geçti
   CHECK_EQ(sink.ev[0].kind, 'A');
   CHECK_EQ(sink.ev[0].ts, 1000ull * 1000000000ull + 10ull);
   CHECK_EQ(sink.ev[1].kind, 'D');
