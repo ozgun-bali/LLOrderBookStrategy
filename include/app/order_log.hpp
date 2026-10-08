@@ -1,17 +1,16 @@
 #ifndef LLOB_APP_ORDER_LOG_HPP
 #define LLOB_APP_ORDER_LOG_HPP
 
-// Keeps every order intent the strategy produced, for the CSV and the checksum.
+// Strategy'nin ürettiği her order intent'i saklıyor; CSV ve checksum için.
 //
-// Writing the CSV as orders appear would put a system call on the hot path and
-// swamp the latency being measured, so the lines are formatted at the end from
-// what is kept here.
+// CSV'yi order'lar çıktıkça yazmak hot path'e bir system call koyardı ve
+// ölçülmeye çalışılan latency'yi boğardı, o yüzden satırlar en sonda, burada
+// tutulanlardan formatlanıyor.
 //
-// Capacity is reserved up front. The sample feed's target book produces a few
-// hundred intents in a day, so the reserve is orders of magnitude clear of it
-// and push_back never reallocates in practice. If a feed ever did exceed it the
-// vector would grow once, which is why the overflow is counted rather than
-// hidden.
+// Capacity baştan reserve ediliyor. Sample data'nın target book'u günde birkaç
+// yüz intent üretiyor, yani reserve bunun kat kat üstünde ve pratikte push_back
+// hiç reallocate etmiyor. Bir feed yine de aşarsa vector bir kez büyüyecek;
+// taşmanın gizlenmek yerine sayılmasının sebebi bu.
 
 #include "strategy/order_intent.hpp"
 

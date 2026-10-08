@@ -1,17 +1,17 @@
 #ifndef LLOB_STRATEGY_ORDER_INTENT_HPP
 #define LLOB_STRATEGY_ORDER_INTENT_HPP
 
-// The strategy's output, and where it goes.
+// Strategy'nin çıktısı, ve nereye gittiği.
 //
-// The strategy never writes to a file. It hands an intent to a sink, and what
-// the sink does with it is the sink's business: in the real run a fill
-// simulator takes it, in tests a recorder collects it, and in the benchmark it
-// folds into a checksum and nothing else. Writing to a file from the hot path
-// would be a system call per signal and would swamp the latency being measured.
+// Strategy hiçbir zaman dosyaya yazmıyor. Bir intent'i sink'e veriyor, sink'in
+// onunla ne yaptığı sink'in işi: gerçek run'da bir fill simulator alıyor,
+// testlerde bir recorder topluyor, benchmark'ta ise sadece checksum'a katılıp
+// bırakılıyor. Hot path'ten dosyaya yazmak signal başına bir system call demek
+// olurdu ve ölçülmeye çalışılan latency'yi boğardı.
 //
-// The reason is an enum, not text. Formatting the CSV column happens outside
-// the timed region; carrying a word around would mean building strings on the
-// hot path, which the assignment rules out.
+// Reason bir enum, text değil. CSV kolonunu formatlamak timed region'ın dışında
+// yapılıyor; ortalıkta bir kelime taşımak hot path'te string kurmak anlamına
+// gelirdi ki assignment bunu açıkça yasaklıyor.
 
 #include "core/types.hpp"
 
@@ -19,11 +19,11 @@ namespace llob {
 
 enum IntentReason {
     REASON_NONE = 0,
-    REASON_GAP_WAS_ASK,   // the level that vanished was an ask, so we sell into it
-    REASON_GAP_WAS_BID    // it was a bid, so we buy
+    REASON_GAP_WAS_ASK,   // kaybolan level bir ask'ti, o yüzden oraya satıyoruz
+    REASON_GAP_WAS_BID    // bid'di, o yüzden alıyoruz
 };
 
-// Matches the struct in the assignment, with the reason tag the CSV needs.
+// Assignment'taki struct'la birebir, artı CSV'nin ihtiyaç duyduğu reason tag'i.
 struct OrderIntent {
     Timestamp    timestamp;
     Side         side;
@@ -48,8 +48,8 @@ inline const char* side_text(Side s) {
     return s == SIDE_BUY ? "BUY" : (s == SIDE_SELL ? "SELL" : "?");
 }
 
-// Counts intents and nothing else. Useful on its own for the benchmark, where
-// the work has to happen but the output must stay outside the timed region.
+// Sadece intent sayıyor, başka bir şey yapmıyor. Tek başına benchmark için
+// faydalı: iş yapılmak zorunda ama output timed region'ın dışında kalmalı.
 struct CountingSink {
     uint64_t count;
     CountingSink() : count(0) {}

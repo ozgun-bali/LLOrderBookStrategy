@@ -1,31 +1,34 @@
 #ifndef LLOB_STRATEGY_GAP_STRATEGY_HPP
 #define LLOB_STRATEGY_GAP_STRATEGY_HPP
 
-// One-tick gap detection, evaluated once per completed timestamp group.
+// Tek tick'lik gap tespiti, tamamlanmış her timestamp group'u için bir kez
+// değerlendiriliyor.
 //
-// The bet is that a level vanished by accident - someone cancelled, or a small
-// order swept it - while the market still agrees on the price. Step into the
-// hole, become the best quote, and collect the spread. That only pays if you
-// are first, which is why the whole project is built around latency.
+// Bahis şu: bir level kazara kaybolmuş - biri cancel etmiş, ya da küçük bir
+// order onu süpürmüş - ama piyasa hâlâ o price üzerinde anlaşıyor. Deliğe gir,
+// best quote ol, spread'i topla. Bu sadece ilk olursan para ediyor; projenin
+// tamamının latency etrafında kurulmasının sebebi bu.
 //
-// Every condition below exists to protect that bet:
+// Aşağıdaki her koşul bu bahsi korumak için var:
 //
-//   1. P_SUREKLI_ISLEM        only continuous trading has a live two-sided book
-//   2. sequence stream valid  a book built on missed messages is fiction
-//   3. a level on both sides  no spread to measure otherwise
-//   4. exactly two ticks      one empty step; three or more is a thin market,
-//                             not a hole that just opened
-//   5. created by this group  the opportunity is in the event, not the state.
-//                             a gap that has been open for a while was already
-//                             everyone else's to take
-//   6. no flip at that price  if the price went bid to ask and then emptied,
-//                             the market moved through the level. Filling that
-//                             is stepping in front of a move, not replacing
-//                             liquidity
-//   7. one order per gap      the same hole would otherwise fire every group
+//   1. P_SUREKLI_ISLEM        iki taraflı canlı bir book sadece continuous
+//                             trading'de var
+//   2. sequence stream sağlam kaçırılmış message'lar üzerine kurulmuş bir book
+//                             kurgudan ibaret
+//   3. iki side'da da level   yoksa ölçülecek bir spread yok
+//   4. tam iki tick           bir boş adım; üç ve üstü yeni açılmış bir delik
+//                             değil, sığ bir piyasa demek
+//   5. bu group'un açtığı gap fırsat olayda, durumda değil. Bir süredir açık
+//                             duran bir gap'i zaten herkes alabilirdi
+//   6. o price'ta flip yok    price bid'den ask'e geçip sonra boşaldıysa piyasa
+//                             o level'ın içinden geçmiş demektir. Orayı
+//                             doldurmak likidite yerine koymak değil, hareketin
+//                             önüne atlamak olur
+//   7. gap başına tek order   yoksa aynı delik her group'ta tetiklenirdi
 //
-// Templated on the sink for the same reason as the layers below: the call
-// inlines, and tests can record intents without a fill simulator behind them.
+// Sink üzerinden template olmasının sebebi alttaki katmanlarla aynı: çağrı
+// inline oluyor, ve testler arkalarında bir fill simulator olmadan intent
+// kaydedebiliyor.
 
 #include "core/config.hpp"
 #include "core/types.hpp"
@@ -38,8 +41,8 @@ struct StrategyStats {
     uint64_t evaluations;
     uint64_t intents;
 
-    // Why nothing was sent. Separated so the report can say what the day
-    // actually looked like rather than just how many orders came out.
+    // Neden hiçbir şey gönderilmediği. Ayrı ayrı tutuluyor ki rapor sadece kaç
+    // order çıktığını değil, günün gerçekte nasıl geçtiğini de söyleyebilsin.
     uint64_t skip_state;
     uint64_t skip_sequence;
     uint64_t skip_one_sided;
@@ -66,7 +69,8 @@ public:
 
     const StrategyStats& stats() const { return stats_; }
 
-    // Called once per completed timestamp group, never between messages of one.
+    // Tamamlanmış her timestamp group'u için bir kez; bir group'un message'ları
+    // arasında asla çağrılmıyor.
     void evaluate(const OrderBook& book, bool sequence_ok,
                   Position position, Timestamp ts) {
         ++stats_.evaluations;
@@ -91,25 +95,26 @@ public:
 
         const Price gap = bid + cfg_.tick_size;
 
-        // Rule 5. Untouched means the level is exactly as the group found it,
-        // so the hole was already there and is nobody's opportunity now.
+        // Kural 5. Dokunulmamış olması, level'ın group'un onu bulduğu halde
+        // durduğu anlamına geliyor; yani delik zaten oradaydı ve artık kimsenin
+        // fırsatı değil.
         if (!book.changed_this_group(gap)) {
             ++stats_.skip_not_this_group; return;
         }
-        // Rule 6.
+        // Kural 6.
         if (book.flipped_this_group(gap)) {
             ++stats_.skip_flip; return;
         }
 
-        // Refill the side that emptied: an ask vanished, so we offer.
+        // Boşalan side'ı doldur: bir ask kayboldu, o yüzden satış koyuyoruz.
         const Side was = book.side_before_group(gap);
         Side side;
         IntentReason reason;
         if (was == SIDE_SELL)      { side = SIDE_SELL; reason = REASON_GAP_WAS_ASK; }
         else if (was == SIDE_BUY)  { side = SIDE_BUY;  reason = REASON_GAP_WAS_BID; }
-        else { ++stats_.skip_no_direction; return; }   // it was empty, or crossed
+        else { ++stats_.skip_no_direction; return; }   // ya boştu ya da cross'tu
 
-        // Rule 7.
+        // Kural 7.
         if (have_last_ && last_price_ == gap && last_side_ == side) {
             ++stats_.skip_duplicate; return;
         }
@@ -133,9 +138,9 @@ public:
     }
 
 private:
-    // The remembered gap counts as the same opportunity until it genuinely
-    // closes. Once something rests at that price again, a later reopening is a
-    // new event and may signal afresh.
+    // Hatırlanan gap, gerçekten kapanana kadar aynı fırsat sayılıyor. O price'ta
+    // yeniden bir şey beklemeye başladığında, sonraki bir açılış yeni bir olay
+    // olur ve baştan signal verebilir.
     void forgetIfGapClosed(const OrderBook& book) {
         if (!have_last_) return;
         if (book.occupied_at(SIDE_BUY, last_price_) ||
@@ -144,9 +149,9 @@ private:
         }
     }
 
-    // Room left before the position limit, capped at the configured size.
-    // Everything is signed: minimum_position is normally negative, and an
-    // unsigned step anywhere here would turn a short limit into no limit.
+    // Position limit'e kalan yer, config'deki boyutla sınırlanmış. Her şey
+    // signed: minimum_position normalde negatif, ve buradaki herhangi bir adımın
+    // unsigned olması short limitini "limit yok"a çevirirdi.
     Quantity sendQuantity(Side side, Position position) const {
         const int64_t room = (side == SIDE_BUY)
             ? (int64_t)cfg_.maximum_position - (int64_t)position

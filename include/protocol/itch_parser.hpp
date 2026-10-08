@@ -3,26 +3,27 @@
 
 // ITCH message dispatch.
 //
-// Sits between MoldUDP64 and the order book: it is the handler MoldSession
-// delivers blocks to, and it hands decoded messages upward.
+// MoldUDP64 ile order book arasında duruyor: MoldSession block'ları bu class'a
+// teslim ediyor, bu class da decode edilmiş message'ları yukarı veriyor.
 //
-// Owns current_second_, updated from 'T' Seconds messages. 'T' is tracked but
-// never applied to the book: the nanosecond field in every other message is
-// relative to the last 'T', so a composed 64-bit timestamp is the only value
-// that stays ordered across a second boundary.
+// current_second_ burada tutuluyor, 'T' Seconds message'larıyla güncelleniyor.
+// 'T' takip ediliyor ama book'a hiç uygulanmıyor: diğer her message'daki
+// nanosecond field'ı son 'T'ye göreli, dolayısıyla second sınırını geçerken
+// sıralı kalan tek değer compose edilmiş 64 bit timestamp.
 //
-// Dispatch order matters for throughput: switch on the type byte, validate the
-// length, then read the Order Book ID and bail if it is not the target. Most
-// messages in the feed belong to other books and must cost as little as possible.
+// Dispatch sırası throughput açısından önemli: önce type byte'ına switch, sonra
+// length kontrolü, sonra Order Book ID okunup target değilse çıkış. Feed'deki
+// message'ların çoğu başka book'lara ait ve mümkün olduğunca ucuza elenmeli.
 //
-// Handled: 'O' 'A' 'E' 'D', plus 'T' for timekeeping. Everything else is skipped.
-// Skipped types that would matter on real data (document in README):
-//   'C' Order Executed with Price - also reduces order quantity
-//   'Y' Order Book Flush          - clears the whole book
+// Handle edilenler: 'O' 'A' 'E' 'D', artı zaman tutmak için 'T'. Geri kalanı
+// skip ediliyor. Gerçek data'da önem taşıyacak ama skip edilen type'lar
+// (README'de yazılı):
+//   'C' Order Executed with Price - bu da order quantity'sini azaltıyor
+//   'Y' Order Book Flush          - bütün book'u temizliyor
 //
-// Templated on the handler for the same reasons as MoldSession: the call
-// inlines, and tests can substitute a recorder for the order book.
-// Handler needs four methods:
+// Handler üzerinden template olmasının sebebi MoldSession ile aynı: çağrı inline
+// oluyor, ve testler order book yerine bir recorder koyabiliyor.
+// Handler'ın dört method'a ihtiyacı var:
 //   void on_add_order     (Timestamp, const AddOrderMsg&);
 //   void on_order_executed(Timestamp, const OrderExecutedMsg&);
 //   void on_order_delete  (Timestamp, const OrderDeleteMsg&);
@@ -37,11 +38,11 @@ namespace llob {
 static const uint64_t NANOS_PER_SECOND = 1000000000ULL;
 
 struct ItchStats {
-    uint64_t messages;          // every ITCH message seen, any book
-    uint64_t target_messages;   // messages for the configured order book
-    uint64_t invalid_messages;  // wrong length, or a side byte that is neither B nor S
-    uint64_t skipped_types;     // types this build does not handle, 'C' and 'Y' among them
-    uint64_t seconds_messages;  // 'T' markers consumed for timekeeping
+    uint64_t messages;          // görülen her ITCH message'ı, book fark etmeksizin
+    uint64_t target_messages;   // config'deki order book'a ait message'lar
+    uint64_t invalid_messages;  // yanlış length, ya da B/S olmayan bir side byte'ı
+    uint64_t skipped_types;     // bu build'in handle etmediği type'lar, 'C' ve 'Y' dahil
+    uint64_t seconds_messages;  // zaman tutmak için tüketilen 'T' marker'ları
     uint64_t before_first_second;
 
     ItchStats()
@@ -58,14 +59,14 @@ public:
 
     const ItchStats& stats() const { return stats_; }
 
-    // Messages carry nanoseconds since the last 'T'. Without one, absolute time
-    // is unknown; the feed normally opens with 'T', so this only matters when
-    // the capture starts mid-stream.
+    // Message'lar son 'T'den beri geçen nanosecond'ı taşıyor. 'T' gelmemişse mutlak
+    // zaman bilinmiyor; feed normalde 'T' ile açıldığı için bu sadece capture
+    // stream'in ortasından başladığında önem kazanıyor.
     bool have_second() const { return have_second_; }
 
-    // Passed straight through. The parser has no opinion on sequence health,
-    // but the strategy below it needs to hear about a gap the moment the
-    // framing layer notices one.
+    // Doğrudan pass through. Parser'ın sequence sağlığı hakkında bir görüşü yok,
+    // ama altındaki strategy, framing layer'ı bir sequence gap fark ettiği anda
+    // bunu duymak zorunda.
     void on_sequence_reliable(bool reliable) {
         handler_.on_sequence_reliable(reliable);
     }
@@ -84,10 +85,10 @@ public:
             current_second_ = m.be32(OFF_SECOND);
             have_second_    = true;
             ++stats_.seconds_messages;
-            return;                      // timekeeping only, never reaches the book
+            return;                      // sadece zaman tutuyor, book'a hiç ulaşmıyor
         }
 
-        // Early filter. Everything below this line runs only for the target book.
+        // Erken filtre. Bu satırın altındaki her şey sadece target book için çalışıyor.
         if (m.be32(bookIdOffset(type)) != target_) return;
         ++stats_.target_messages;
 
@@ -123,12 +124,12 @@ public:
                 break;
             }
             default:
-                break;   // unreachable: expected_length already rejected the rest
+                break;   // unreachable: expected_length geri kalanını zaten eledi
         }
     }
 
 private:
-    // 'O' carries the book id at 5, the order messages carry it at 13.
+    // 'O' book id'yi 5'te taşıyor, order message'ları 13'te.
     static std::size_t bookIdOffset(uint8_t type) {
         return (type == MSG_BOOK_STATE) ? OFF_STATE_BOOK_ID : OFF_ADD_BOOK_ID;
     }

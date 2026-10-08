@@ -1,21 +1,21 @@
 #ifndef LLOB_APP_ENGINE_HPP
 #define LLOB_APP_ENGINE_HPP
 
-// Wires the pipeline together and owns the timestamp grouping.
+// Pipeline'ı birbirine bağlıyor ve timestamp grouping'in sahibi.
 //
 //   datagram -> MoldUDP64 -> ItchParser -> Engine -> OrderBook
 //                                             |
-//                                             +-> GapStrategy, once per group
+//                                             +-> GapStrategy, group başına bir kez
 //
-// Messages sharing an ITCH timestamp are one event as far as the exchange is
-// concerned. Running the strategy between them would show it books that never
-// existed: on the sample feed the largest group holds 3,919 messages, and the
-// book crosses and uncrosses repeatedly inside it.
+// Aynı ITCH timestamp'ini paylaşan message'lar, borsa açısından tek bir olay.
+// Strategy'yi aralarında çalıştırmak ona hiç var olmamış book'lar gösterirdi:
+// sample data'da en büyük group 3.919 message taşıyor ve book onun içinde
+// defalarca cross olup düzeliyor.
 //
-// So the strategy runs only on a closed group, and a group closes when a
-// message arrives carrying a different timestamp - before that message is
-// applied, or it would leak into the group it is ending. The last group has no
-// such message behind it, which is what finalize() is for.
+// Bu yüzden strategy sadece kapanmış bir group üzerinde çalışıyor, ve bir group
+// farklı bir timestamp taşıyan bir message geldiğinde kapanıyor - o message
+// uygulanmadan ÖNCE, yoksa bitirdiği group'un içine sızardı. Son group'un
+// arkasında böyle bir message yok; finalize() tam olarak bunun için var.
 
 #include "core/types.hpp"
 #include "book/order_book.hpp"
@@ -24,9 +24,9 @@
 namespace llob {
 
 struct EngineStats {
-    uint64_t groups;            // completed timestamp groups
-    uint64_t messages;          // target-book messages applied
-    uint64_t invariant_breaks;  // groups that ended with a book that cannot be
+    uint64_t groups;            // tamamlanmış timestamp group'ları
+    uint64_t messages;          // uygulanan target book message'ları
+    uint64_t invariant_breaks;  // var olamayacak bir book'la biten group'lar
 
     EngineStats() : groups(0), messages(0), invariant_breaks(0) {}
 };
@@ -34,8 +34,8 @@ struct EngineStats {
 template <typename Strategy>
 class Engine {
 public:
-    // The position is read, never written: whatever owns it - a fill simulator
-    // from here on - updates it between groups.
+    // Position okunuyor, asla yazılmıyor: sahibi her kimse - bundan sonrası için
+    // bir fill simulator - onu group'lar arasında güncelliyor.
     Engine(OrderBook& book, Strategy& strategy, const Position& position)
         : book_(book), strategy_(strategy), position_(position),
           current_ts_(0), have_ts_(false), sequence_ok_(true) {}
@@ -64,17 +64,17 @@ public:
         book_.order_delete(m);
     }
 
-    // A state change carries a timestamp like any other message, so it closes
-    // the group before it too.
+    // State değişikliği de diğer her message gibi bir timestamp taşıyor, yani o da
+    // kendinden önceki group'u kapatıyor.
     void on_book_state(Timestamp ts, const BookStateMsg& m) {
         closeGroupIfTimestampChanged(ts);
         ++stats_.messages;
         book_.book_state(m);
     }
 
-    // End of input. The last group is still open and nothing is coming to
-    // close it, so it is evaluated here. Easy to forget, and forgetting it
-    // silently drops whatever signal the final group held.
+    // Input'un sonu. Son group hâlâ açık ve onu kapatacak bir şey gelmeyecek, o
+    // yüzden burada değerlendiriliyor. Unutulması kolay, ve unutmak son group'un
+    // taşıdığı signal'i sessizce düşürüyor.
     void finalize() {
         if (!have_ts_) return;
         closeGroup();
@@ -83,22 +83,22 @@ public:
 
 private:
     void closeGroupIfTimestampChanged(Timestamp ts) {
-        if (have_ts_ && ts == current_ts_) return;   // still the same event
+        if (have_ts_ && ts == current_ts_) return;   // hâlâ aynı olay
         if (have_ts_) closeGroup();
         current_ts_ = ts;
         have_ts_    = true;
     }
 
     void closeGroup() {
-        // Checked here rather than after every message: inside a group the
-        // book may legitimately cross, because removing the old bid and adding
-        // the new ask are two separate messages.
+        // Her message'dan sonra değil burada kontrol ediliyor: bir group'un
+        // içinde book meşru şekilde cross olabiliyor, çünkü eski bid'i silmek ve
+        // yeni ask'i eklemek iki ayrı message.
         if (!book_.invariants_hold()) ++stats_.invariant_breaks;
 
         strategy_.evaluate(book_, sequence_ok_, position_, current_ts_);
 
-        // Only now does the journal forget the group, after the strategy has
-        // read what it recorded.
+        // Journal group'u ancak şimdi unutuyor - strategy kaydettiklerini
+        // okuduktan sonra.
         book_.begin_group();
         ++stats_.groups;
     }

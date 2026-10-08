@@ -1,26 +1,26 @@
 #ifndef LLOB_APP_ALLOC_COUNTER_HPP
 #define LLOB_APP_ALLOC_COUNTER_HPP
 
-// Counts every heap allocation the program makes.
+// Programın yaptığı her heap allocation'ı sayıyor.
 //
-// The global operator new is replaced in alloc_counter.cpp, so this sees all
-// of them: every new, every vector that grows, every string that is built.
-// Nothing can hide from it.
+// Global operator new, alloc_counter.cpp içinde değiştirildiği için bu sayaç
+// hepsini görüyor: her new, büyüyen her vector, kurulan her string. Hiçbiri
+// bundan saklanamıyor.
 //
-// The point is to turn a claim into a measurement. "No allocation on the hot
-// path" is an assertion; a counter that reads zero after the run is evidence,
-// and evidence is what the assignment asks to be reported.
+// Amaç bir iddiayı bir ölçüme çevirmek. "Hot path'te allocation yok" bir iddia;
+// run'dan sonra sıfır okuyan bir sayaç ise kanıt, ve assignment'ın raporlanmasını
+// istediği şey kanıt.
 //
-// It matters because allocation is the single worst source of unpredictable
-// latency. malloc may find a free block and return in twenty nanoseconds, or
-// walk its free lists, or go to the kernel for more pages and take
-// microseconds. The average hides it; the tail does not.
+// Önemli olmasının sebebi, allocation'ın öngörülemez latency'nin tek başına en
+// kötü kaynağı olması. malloc boş bir blok bulup yirmi nanosaniyede dönebilir,
+// free list'lerini gezebilir, ya da yeni sayfa için kernel'e gidip mikrosaniyeler
+// harcayabilir. Ortalama bunu saklıyor; tail saklamıyor.
 
 #include <cstddef>
 
 namespace llob {
 
-// Single threaded, so a plain counter is enough and costs an increment.
+// Tek thread, yani düz bir sayaç yeterli ve maliyeti bir increment.
 extern std::size_t g_alloc_count;
 extern std::size_t g_alloc_bytes;
 

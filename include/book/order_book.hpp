@@ -1,14 +1,14 @@
 #ifndef LLOB_BOOK_ORDER_BOOK_HPP
 #define LLOB_BOOK_ORDER_BOOK_HPP
 
-// The order book for the single target instrument.
+// Tek bir target instrument için order book.
 //
-// Composes OrderPool, which holds the orders and finds them by (side, id), and
-// PriceLevels, which holds the per-price totals and the best price on each side.
-// This class is the part that knows what each ITCH message means.
+// İki parçayı birleştiriyor: order'ları tutan ve onları (side, id) ile bulan
+// OrderPool, ve price başına toplamlarla her side'ın best price'ını tutan
+// PriceLevels. Bu class, her ITCH message'ının ne anlama geldiğini bilen kısım.
 //
-// Messages for other books never arrive here: the parser drops them before
-// decoding. Everything below assumes the message belongs to this book.
+// Başka book'lara ait message'lar buraya hiç gelmiyor: parser onları decode
+// etmeden eliyor. Aşağıdaki her şey message'ın bu book'a ait olduğunu varsayıyor.
 
 #include "core/config.hpp"
 #include "core/types.hpp"
@@ -25,10 +25,10 @@ struct BookStats {
     uint64_t deletes;
     uint64_t state_changes;
 
-    uint64_t duplicate_order_ids;   // an id already active on that side
-    uint64_t unknown_order_ids;     // execute or delete for an order we never saw
-    uint64_t market_orders;         // price sentinel: no level to rest on
-    uint64_t oversized_executions;  // executed quantity above what was left
+    uint64_t duplicate_order_ids;   // o side'da zaten aktif olan bir id
+    uint64_t unknown_order_ids;     // hiç görmediğimiz bir order'a execute ya da delete
+    uint64_t market_orders;         // price sentinel: oturacağı bir level yok
+    uint64_t oversized_executions;  // kalandan fazla execute edilen quantity
 
     BookStats()
         : adds(0), executions(0), partial_executions(0), deletes(0),
@@ -43,9 +43,9 @@ public:
           state_(STATE_UNKNOWN), last_exec_price_(0),
           have_last_exec_(false), healthy_(true), day_closed_(false) {}
 
-    // False once the pool filled up or a price fell outside the band. The book
-    // is wrong from that point on, so the strategy has to stop rather than
-    // trade on it.
+    // Pool dolduğunda ya da bir price band dışına düştüğünde false oluyor. O
+    // noktadan sonra book yanlış, yani strategy onun üzerinden işlem yapmak yerine
+    // durmak zorunda.
     bool healthy() const { return healthy_; }
 
     BookState state()      const { return state_; }
@@ -65,11 +65,11 @@ public:
     std::size_t      live_orders() const { return orders_.size(); }
     const BookStats& stats()       const { return stats_; }
 
-    // Timestamp group boundary. The engine calls this once the previous group
-    // has been evaluated; everything the journal recorded for it goes stale.
+    // Timestamp group sınırı. Engine bunu önceki group değerlendirildikten sonra
+    // çağırıyor; journal'ın o group için kaydettiği her şey stale oluyor.
     void begin_group() { levels_.begin_group(); }
 
-    // What the current group did to a price, for the strategy's rules 5 and 6.
+    // Mevcut group'un bir price'a ne yaptığı - strategy'nin 5. ve 6. kuralları için.
     bool changed_this_group(Price p) const { return levels_.changed_this_group(p); }
     bool flipped_this_group(Price p) const { return levels_.flipped_this_group(p); }
     Side side_before_group(Price p) const { return levels_.side_before_group(p); }
@@ -77,21 +77,21 @@ public:
     void add_order(const AddOrderMsg& m) {
         ++stats_.adds;
 
-        // A market order has no price, so it never rests on a level. Letting
-        // the sentinel through would index far outside the band.
+        // Market order'ın price'ı yok, yani hiçbir level'da beklemiyor. Sentinel
+        // değeri geçirmek band'ın çok dışını index'lemeye yol açardı.
         if (m.price == PRICE_NOT_AVAILABLE) { ++stats_.market_orders; return; }
 
         const InsertResult r = orders_.insert(m.side, m.order_id, m.price, m.quantity);
         if (r == INSERT_DUPLICATE) {
-            // Keep the order already resting and ignore the new one: the book
-            // we have is the one the earlier messages described.
+            // Zaten bekleyen order'ı koru, yenisini yok say: elimizdeki book, daha
+            // önceki message'ların tarif ettiği book.
             ++stats_.duplicate_order_ids;
             return;
         }
         if (r == INSERT_FULL) { healthy_ = false; return; }
 
         if (!levels_.add_order(m.side, m.price, m.quantity)) {
-            orders_.remove(m.side, m.order_id);   // undo, keep the two in step
+            orders_.remove(m.side, m.order_id);   // geri al, ikisi senkron kalsın
             healthy_ = false;
         }
     }
@@ -102,8 +102,8 @@ public:
         Order* o = orders_.find(m.side, m.order_id);
         if (!o) { ++stats_.unknown_order_ids; return; }
 
-        // Read the price before anything is removed: the message carries no
-        // price of its own, and this is where last_execution_price comes from.
+        // Price'ı hiçbir şey silinmeden önce oku: message kendi price'ını
+        // taşımıyor, ve last_execution_price buradan geliyor.
         const Price    price = o->price;
         const Quantity left  = o->remaining;
 
@@ -120,8 +120,8 @@ public:
             return;
         }
 
-        // Filled in full. No Order Delete follows a complete fill, so removing
-        // it here is the only thing that takes it off the book.
+        // Tamamen fill oldu. Tam bir fill'in ardından Order Delete gelmiyor, yani
+        // onu book'tan düşüren tek şey buradaki silme.
         levels_.remove_order(m.side, price, left);
         orders_.remove(m.side, m.order_id);
     }
@@ -142,9 +142,9 @@ public:
         if (m.state == STATE_MARJ_YAYIN_KAPANIS) day_closed_ = true;
     }
 
-    // Cheap checks, meant for a completed timestamp group rather than for every
-    // message: inside a group the book may legitimately cross, because deleting
-    // the old bid and adding the new ask are two separate messages.
+    // Ucuz kontroller; her message için değil, tamamlanmış bir timestamp group'u
+    // için düşünülmüş: bir group'un içinde book meşru şekilde cross olabiliyor,
+    // çünkü eski bid'i silmek ve yeni ask'i eklemek iki ayrı message.
     bool invariants_hold() const {
         if (levels_.out_of_band()) return false;
         if (has_best(SIDE_BUY) && has_best(SIDE_SELL))
@@ -152,8 +152,8 @@ public:
         return true;
     }
 
-    // Walks every live order and compares the totals against the level
-    // aggregates. Linear in the number of orders, so tests only.
+    // Her aktif order'ı gezip toplamları level toplamlarıyla karşılaştırıyor.
+    // Order sayısıyla doğru orantılı, o yüzden sadece testlerde.
     bool verify_level_sums() const {
         for (int s = 0; s < SIDE_COUNT; ++s) {
             const Side side = (Side)s;
@@ -165,8 +165,8 @@ public:
     }
 
 private:
-    // A functor rather than a lambda: C++11 lambdas are fine, but this keeps
-    // the capture explicit and the failure reason easy to extend.
+    // Lambda yerine functor: C++11 lambda'ları sorunsuz, ama bu şekilde capture
+    // açıkça görünüyor ve hata sebebini genişletmek kolay kalıyor.
     struct SumCheck {
         const PriceLevels& levels;
         Side side;

@@ -1,4 +1,4 @@
-// Final output. Runs outside every timed region.
+// Son çıktı. Her timed region'ın dışında çalışıyor.
 
 #include "app/reporter.hpp"
 
@@ -9,9 +9,10 @@ namespace llob {
 
 namespace {
 
-// A missing value prints as a word rather than a number, so nothing reads a
-// placeholder as data. An empty side of the book has no best price at all, and
-// an open position with no traded price has no honest P&L.
+// Eksik bir değer sayı olarak değil kelime olarak basılıyor, ki kimse yer
+// tutucuyu veri sanmasın. Book'un boş bir side'ının best price'ı hiç yok, ve
+// hiç işlem görmemiş bir price'la açık duran bir position'ın dürüst bir P&L'i
+// yok.
 void printPrice(std::ostream& out, const char* name, bool have, Price p) {
     out << name << " = ";
     if (have) out << p; else out << "none";
@@ -26,7 +27,7 @@ void print_summary(std::ostream& out, const RunSummary& s) {
 
     out << "final_pnl               = ";
     if (s.pnl_known) out << s.final_pnl;
-    else             out << "unmarked";       // position open, nothing traded
+    else             out << "unmarked";       // position açık, hiç işlem olmadı
     out << "\n";
 
     printPrice(out, "last_execution_price   ",
@@ -50,7 +51,7 @@ void print_summary(std::ostream& out, const RunSummary& s) {
     std::snprintf(hex, sizeof(hex), "0x%016llX", (unsigned long long)s.checksum);
     out << "checksum                = " << hex << "\n";
 
-    // Context for reading the numbers above. Not part of the required set.
+    // Yukarıdaki sayıları okumak için bağlam. Zorunlu listenin parçası değil.
     out << "\n";
     out << "packets                 = " << s.packets         << "\n";
     out << "itch_messages           = " << s.itch_messages   << "\n";
@@ -58,8 +59,9 @@ void print_summary(std::ostream& out, const RunSummary& s) {
     out << "timestamp_groups        = " << s.groups          << "\n";
     out << "simulated_fills         = " << s.fills           << "\n";
 
-    // Where the evaluations went. Reading down this list says whether the day
-    // simply offered nothing or a rule is turning everything away.
+    // Evaluation'ların nereye gittiği. Bu listeyi aşağı doğru okumak, günün
+    // gerçekten hiçbir şey sunmadığını mı yoksa bir kuralın her şeyi mi geri
+    // çevirdiğini söylüyor.
     out << "\n";
     out << "strategy_evaluations    = " << s.evaluations         << "\n";
     out << "  skip_state            = " << s.skip_state          << "\n";

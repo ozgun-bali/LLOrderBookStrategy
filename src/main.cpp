@@ -1,11 +1,12 @@
-// CLI entry point.
+// CLI giriş noktası.
 //
 //   ./orderbook --input sample.bin --config config.txt [--orders orders.csv]
 //   ./orderbook --benchmark sample.bin --iterations 100 [--config config.txt]
 //
-// The input file is read into memory once, before anything that will later be
-// timed. Everything downstream works on views into that one buffer: no copy is
-// made of a packet, a message or a field.
+// Input dosyası, sonradan ölçülecek hiçbir şey başlamadan önce bir kez belleğe
+// okunuyor. Aşağıdaki her şey o tek buffer'ın içine açılan view'lar üzerinden
+// çalışıyor: ne bir packet'in, ne bir message'ın, ne de bir field'ın kopyası
+// çıkarılıyor.
 
 #include "app/benchmark.hpp"
 #include "app/pipeline.hpp"

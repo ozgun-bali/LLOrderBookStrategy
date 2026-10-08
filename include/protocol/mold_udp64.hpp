@@ -1,21 +1,22 @@
 #ifndef LLOB_PROTOCOL_MOLD_UDP64_HPP
 #define LLOB_PROTOCOL_MOLD_UDP64_HPP
 
-// MoldUDP64 framing and sequence tracking.
+// MoldUDP64 framing ve sequence takibi.
 //
-// Header is 20 bytes: Session (10, Alpha) | Sequence Number (8, BE) |
-// Message Count (2, BE). Then Message Count blocks of [2-byte BE length][payload].
+// Header 20 byte: Session (10, Alpha) | Sequence Number (8, BE) |
+// Message Count (2, BE). Ardından Message Count adet block geliyor, her biri
+// [2 byte BE length][payload] biçiminde.
 //
-// Sequence numbers count MESSAGES, not packets:
+// Sequence number PACKET değil, MESSAGE sayıyor:
 //   expected_next = sequence + message_count
 //
-// Special message counts:
-//   0x0000 -> heartbeat (no blocks)
+// Özel message count değerleri:
+//   0x0000 -> heartbeat (block yok)
 //   0xFFFF -> end of session
 //
-// Templated on the handler so the sequence logic can be tested against a
-// recorder instead of a live order book, and so the call inlines rather than
-// going through a vtable on the hot path. Handler needs one method:
+// Handler üzerinden template: böylece sequence logic'i canlı bir order book
+// yerine bir recorder'a karşı test edilebiliyor, ve çağrı hot path'te vtable
+// üzerinden gitmek yerine inline oluyor. Handler'ın tek bir method'a ihtiyacı var:
 //   void on_message(const ByteReader& msg);
 
 #include "core/types.hpp"
@@ -36,9 +37,9 @@ static const uint16_t MOLD_COUNT_END_OF_SESSION = 0xFFFF;
 
 struct MoldStats {
     uint64_t packets;
-    uint64_t messages;          // blocks actually handed to the handler
+    uint64_t messages;          // handler'a gerçekten teslim edilen block'lar
     uint64_t sequence_gaps;
-    uint64_t duplicates;        // whole packets or leading blocks already seen
+    uint64_t duplicates;        // tamamı ya da baş kısmı daha önce görülmüş packet'ler
     uint64_t invalid_packets;
     uint64_t heartbeats;
     uint64_t session_changes;
@@ -59,7 +60,7 @@ public:
         std::memset(session_, 0, MOLD_LEN_SESSION);
     }
 
-    
+
     bool reliable() const { return reliable_; }
 
     const MoldStats& stats() const { return stats_; }
@@ -82,7 +83,7 @@ public:
 
         if (count == MOLD_COUNT_HEARTBEAT) {
             ++stats_.heartbeats;
-            
+
             if (have_expected_ && seq > expected_) {
                 ++stats_.sequence_gaps;
                 setReliable(false);
@@ -91,22 +92,22 @@ public:
             return;
         }
 
-        if (!have_expected_) {           
+        if (!have_expected_) {
             expected_      = seq;
             have_expected_ = true;
         }
 
-        const uint64_t end = seq + count;   
+        const uint64_t end = seq + count;
         std::size_t skip = 0;
 
         if (seq > expected_) {
             ++stats_.sequence_gaps;
             setReliable(false);
         } else if (end <= expected_) {
-            ++stats_.duplicates;            
+            ++stats_.duplicates;
             return;
         } else if (seq < expected_) {
-            ++stats_.duplicates;           
+            ++stats_.duplicates;
             skip = (std::size_t)(expected_ - seq);
         }
 
@@ -116,29 +117,30 @@ public:
     }
 
 private:
-    // Reliability is pushed, not polled. A gap is noticed while the packet is
-    // being framed, before any of its messages reach the strategy, so telling
-    // the handler at that moment is the only way the strategy sees it in time.
+    // Reliability bilgisi poll edilmiyor, push ediliyor. Bir sequence gap packet
+    // frame'lenirken fark ediliyor, yani içindeki hiçbir message strategy'ye
+    // ulaşmadan önce; o anda handler'a haber vermek, strategy'nin bunu zamanında
+    // görmesinin tek yolu.
     void setReliable(bool v) {
         if (reliable_ == v) return;
         reliable_ = v;
         handler_.on_sequence_reliable(v);
     }
 
-    // Returns false when the packet is malformed. Blocks already delivered stay
-    // delivered: the damage is in the remainder, not in what was parsed cleanly.
+    // Packet malformed ise false döner. Daha önce teslim edilmiş block'lar teslim
+    // edilmiş kalıyor: hasar geri kalanda, temiz parse edilmiş kısımda değil.
     bool walkBlocks(const ByteReader& r, uint16_t count, std::size_t skip) {
         std::size_t off = MOLD_HEADER_LEN;
 
         for (uint16_t i = 0; i < count; ++i) {
-            if (!r.has(off + 2)) {         
+            if (!r.has(off + 2)) {
                 ++stats_.invalid_packets;
                 setReliable(false);
                 return false;
             }
             const uint16_t blockLen = r.be16(off);
 
-            if (!r.has(off + 2 + blockLen)) {   // payload runs past the end
+            if (!r.has(off + 2 + blockLen)) {   // payload packet'in dışına taşıyor
                 ++stats_.invalid_packets;
                 setReliable(false);
                 return false;
@@ -151,8 +153,8 @@ private:
             off += 2 + blockLen;
         }
 
-        // Blocks that do not add up to the datagram mean the count or the
-        // lengths lied, even though each block happened to fit.
+        // Block'ların toplamı datagram'ı tam doldurmuyorsa, her block tek tek sığmış
+        // olsa bile count ya da length'lerden biri yalan söylemiş demektir.
         if (off != r.size()) ++stats_.invalid_packets;
         return true;
     }
@@ -167,8 +169,8 @@ private:
         }
         if (std::memcmp(session_, s, MOLD_LEN_SESSION) == 0) return;
 
-        // A different session is a different stream: sequence numbering restarts
-        // and nothing carried over from the old one can be trusted.
+        // Farklı bir session farklı bir stream demek: sequence numaralandırması
+        // baştan başlıyor ve eskisinden taşınan hiçbir şeye güvenilemez.
         ++stats_.session_changes;
         std::memcpy(session_, s, MOLD_LEN_SESSION);
         have_expected_ = false;

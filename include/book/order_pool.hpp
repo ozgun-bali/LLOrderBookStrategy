@@ -1,21 +1,21 @@
 #ifndef LLOB_BOOK_ORDER_POOL_HPP
 #define LLOB_BOOK_ORDER_POOL_HPP
 
-// Fixed-capacity storage for resting orders, plus the order id index.
+// Book'ta bekleyen order'lar için fixed-capacity depolama, artı order id index'i.
 //
-// Capacity comes from config.max_active_orders and is allocated once. Running
-// out returns INSERT_FULL so the caller can stop the strategy; it never grows,
-// never overwrites and never corrupts.
+// Capacity config.max_active_orders'tan geliyor ve bir kez allocate ediliyor.
+// Dolduğunda INSERT_FULL dönüyor ki caller strategy'yi durdurabilsin; asla
+// büyümüyor, asla üzerine yazmıyor, asla bellek bozmuyor.
 //
-// ITCH order ids are unique per order book AND side only, so the key is
-// (side, order_id). Slots are shared across both sides - an order is an order -
-// but there is one index table per side, and every 'E' and 'D' message carries
-// the side, so there is never any doubt which table to look in.
+// ITCH order id'leri sadece order book VE side bazında unique, o yüzden key
+// (side, order_id). Slot'lar iki side arasında ortak - order order'dır - ama
+// side başına bir index table var, ve her 'E' ve 'D' message'ı side'ı taşıdığı
+// için hangi table'a bakılacağı hiçbir zaman belirsiz değil.
 //
-// Lookup is open addressing with linear probing over a power-of-two table kept
-// at most half full. Deletion shifts entries back instead of leaving tombstones,
-// because orders are removed constantly and tombstones would slowly turn every
-// probe into a scan.
+// Lookup, power-of-two boyutlu ve en fazla yarısı dolu bir table üzerinde open
+// addressing + linear probing. Delete işlemi tombstone bırakmak yerine entry'leri
+// geri kaydırıyor, çünkü order'lar sürekli siliniyor ve tombstone'lar zamanla her
+// probe'u bir scan'e çevirirdi.
 
 #include "core/types.hpp"
 
@@ -24,22 +24,22 @@
 
 namespace llob {
 
-// Namespace scope rather than a static member: an in-class `static const` is a
-// declaration, and C++11 needs a separate definition the moment anything binds
-// a reference to it, which a header-only class has nowhere to put.
+// Static member değil namespace scope: class içindeki bir `static const` sadece
+// bir declaration, ve C++11'de bir şey ona reference bağladığı anda ayrı bir
+// definition gerekiyor - header-only bir class'ın bunu koyacak yeri yok.
 static const uint32_t NO_SLOT = 0xFFFFFFFFu;
 
 struct Order {
     OrderId  id;
     Quantity remaining;
     Price    price;
-    uint32_t next_free;   // only meaningful while the slot is on the free list
+    uint32_t next_free;   // sadece slot free list'teyken anlamlı
 };
 
 enum InsertResult {
     INSERT_OK,
-    INSERT_DUPLICATE,   // this id is already active on this side
-    INSERT_FULL         // capacity reached; caller must stop the strategy
+    INSERT_DUPLICATE,   // bu id bu side'da zaten aktif
+    INSERT_FULL         // capacity doldu; caller strategy'yi durdurmak zorunda
 };
 
 class OrderPool {
@@ -51,7 +51,7 @@ public:
         assert(capacity > 0);
         assert(capacity < NO_SLOT);
 
-        // Chain every slot into the free list, last one terminates it.
+        // Her slot'u free list'e zincirle, sonuncusu listeyi sonlandırıyor.
         for (std::size_t i = 0; i + 1 < capacity; ++i)
             slots_[i].next_free = (uint32_t)(i + 1);
         slots_[capacity - 1].next_free = NO_SLOT;
@@ -90,8 +90,9 @@ public:
         return INSERT_OK;
     }
 
-    // Points into the slot array, which never moves, so the pointer stays valid
-    // until this order is removed. Callers mutate `remaining` through it.
+    // Slot array'ine işaret ediyor, o array hiç yer değiştirmiyor, yani pointer bu
+    // order silinene kadar geçerli kalıyor. Caller'lar `remaining`'i bunun üzerinden
+    // değiştiriyor.
     Order* find(Side side, OrderId id) {
         const uint32_t slot = findSlot(side, id);
         return slot == NO_SLOT ? 0 : &slots_[slot];
@@ -102,9 +103,9 @@ public:
         return slot == NO_SLOT ? 0 : &slots_[slot];
     }
 
-    // Walks the live orders on one side. The index table only ever points at
-    // occupied slots, so iterating it visits each live order exactly once.
-    // Order is unspecified, and this is for checking, not for the hot path.
+    // Bir side'daki aktif order'ları geziyor. Index table sadece dolu slot'lara
+    // işaret ettiği için üzerinden geçmek her aktif order'ı tam bir kez ziyaret
+    // ediyor. Sıra garantisi yok, ve bu kontrol için - hot path için değil.
     template <typename Fn>
     void for_each(Side side, Fn fn) const {
         assert(side == SIDE_BUY || side == SIDE_SELL);
@@ -123,7 +124,7 @@ public:
             if (slots_[table[b]].id == id) {
                 const uint32_t slot = table[b];
 
-                slots_[slot].next_free = free_head_;   // back onto the free list
+                slots_[slot].next_free = free_head_;   // free list'e geri koy
                 free_head_ = slot;
                 --size_;
 
@@ -136,10 +137,10 @@ public:
     }
 
 private:
-    // Multiply-shift: the constant is 2^64 / golden ratio. The multiply mixes
-    // the bits and the high ones come out best mixed, so the shift takes those.
-    // Plain id % size would also work while ids run in sequence, but this keeps
-    // probes short whatever pattern the feed produces.
+    // Multiply-shift: sabit 2^64 / altın oran. Çarpma bit'leri karıştırıyor ve en
+    // iyi karışanlar üst bit'ler oluyor, shift de onları alıyor. id'ler sıralı
+    // gittiği sürece düz `id % size` de iş görürdü, ama bu yöntem feed hangi deseni
+    // üretirse üretsin probe'ları kısa tutuyor.
     std::size_t home(OrderId id) const {
         return (std::size_t)((id * 0x9E3779B97F4A7C15ULL) >> shift_) & mask_;
     }
@@ -150,8 +151,8 @@ private:
         const std::vector<uint32_t>& table = buckets_[side];
         std::size_t b = home(id);
 
-        // An empty bucket ends the search: had this id been inserted, it would
-        // have landed on the first empty bucket along this same path.
+        // Boş bir bucket aramayı bitiriyor: bu id insert edilmiş olsaydı, aynı yol
+        // üzerindeki ilk boş bucket'a konmuş olurdu.
         while (table[b] != NO_SLOT) {
             if (slots_[table[b]].id == id) return table[b];
             b = (b + 1) & mask_;
@@ -159,10 +160,10 @@ private:
         return NO_SLOT;
     }
 
-    // Backward-shift deletion. Clearing a bucket outright would cut the probe
-    // chain: an entry that had been pushed past this bucket would never be
-    // reached again. So walk forward and pull back anything whose home bucket
-    // is at or before the hole.
+    // Backward-shift deletion. Bir bucket'ı doğrudan boşaltmak probe zincirini
+    // keserdi: bu bucket'ın ötesine itilmiş bir entry'ye bir daha asla
+    // ulaşılamazdı. O yüzden ileri doğru yürüyüp, home bucket'ı deliğin üzerinde
+    // veya öncesinde olan her şeyi geri çekiyoruz.
     void closeGap(std::vector<uint32_t>& table, std::size_t hole) {
         std::size_t j = hole;
         table[hole] = NO_SLOT;
@@ -173,8 +174,8 @@ private:
 
             const std::size_t k = home(slots_[table[j]].id);
 
-            // Leave it alone while its home lies inside (hole, j]: moving it
-            // back would put it before its own starting point.
+            // Home'u (hole, j] aralığındaysa dokunma: geri çekmek onu kendi
+            // başlangıç noktasının önüne koyardı.
             const bool inRange = (hole <= j) ? (hole < k && k <= j)
                                              : (hole < k || k <= j);
             if (inRange) continue;
@@ -185,8 +186,8 @@ private:
         }
     }
 
-    // Power of two, at least twice the capacity: a load factor under 0.5 keeps
-    // the average probe near one.
+    // İkinin kuvveti, capacity'nin en az iki katı: 0.5'in altındaki bir load
+    // factor ortalama probe sayısını bire yakın tutuyor.
     static std::size_t tableSize(std::size_t capacity) {
         std::size_t n = 1;
         while (n < capacity * 2) n <<= 1;

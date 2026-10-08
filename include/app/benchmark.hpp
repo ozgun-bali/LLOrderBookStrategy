@@ -1,29 +1,30 @@
 #ifndef LLOB_APP_BENCHMARK_HPP
 #define LLOB_APP_BENCHMARK_HPP
 
-// Replays the same data repeatedly and reports how long it took.
+// Aynı data'yı tekrar tekrar oynatıp ne kadar sürdüğünü raporluyor.
 //
-// The rules the assignment sets, and why each one is there:
+// Assignment'ın koyduğu kurallar, ve her birinin neden orada olduğu:
 //
-//   The input is in memory before anything is timed. Timing the read would
-//   measure the disk.
+//   Input, hiçbir şey ölçülmeden önce bellekte. Okumayı ölçmek diski ölçmek
+//   olurdu.
 //
-//   At least one warm-up pass runs unmeasured. A cold first pass can be
-//   several times slower than the steady state, and none of it is the code's
-//   doing: 584 MB of freshly allocated pages fault in one at a time, caches
-//   and branch predictors start empty, and the core may still be clocked down.
+//   En az bir warm-up pass'ı ölçülmeden koşuyor. Soğuk bir ilk pass kararlı
+//   haline göre kat kat yavaş olabiliyor, ve bunun hiçbiri kodun yaptığı bir şey
+//   değil: yeni allocate edilmiş 584 MB'lık sayfa tek tek page fault'la içeri
+//   giriyor, cache'ler ve branch predictor'lar boş başlıyor, ve çekirdek hâlâ
+//   düşük frekansta olabiliyor.
 //
-//   The data is replayed many times. One pass is one sample, and a scheduler
-//   decision or an interrupt moves it by a tenth easily.
+//   Data çok kez tekrar oynatılıyor. Bir pass bir örnek demek, ve tek bir
+//   scheduler kararı ya da bir interrupt onu kolayca onda bir oynatıyor.
 //
-//   No file or console output happens inside the timed region.
+//   Timed region'ın içinde hiç dosya ya da konsol çıktısı yok.
 //
-//   A checksum leaves the program. Without a value anything depends on, -O3
-//   is entitled to notice the whole computation is dead and remove it, and the
-//   measurement would be of nothing at all.
+//   Programdan bir checksum çıkıyor. Hiçbir şeyin bağlı olmadığı bir değer
+//   olmazsa -O3 bütün hesabın ölü olduğunu fark edip onu kaldırmakta haklı, ve
+//   ölçüm hiçbir şeyin ölçümü olurdu.
 //
-// Each iteration builds a fresh pipeline, so every pass starts from an empty
-// book and does identical work.
+// Her iterasyon yeni bir pipeline kuruyor, yani her pass boş bir book'la başlıyor
+// ve birebir aynı işi yapıyor.
 
 #include "app/alloc_counter.hpp"
 #include "app/latency.hpp"
@@ -38,8 +39,8 @@ namespace llob {
 struct BenchmarkResult {
     uint64_t iterations;
 
-    double total_seconds;       // across all measured iterations
-    double best_seconds;        // the cleanest single pass
+    double total_seconds;       // ölçülen bütün iterasyonlar boyunca
+    double best_seconds;        // en temiz tek pass
     double worst_seconds;
     double messages_per_second; // from the best pass
     double ns_per_message;
@@ -60,7 +61,7 @@ struct BenchmarkResult {
     uint64_t peak_memory_kb;
 
     uint64_t checksum;
-    bool     checksum_stable;   // every iteration agreed
+    bool     checksum_stable;   // bütün iterasyonlar aynı fikirdeydi
 
     BenchmarkResult()
         : iterations(0), total_seconds(0), best_seconds(0), worst_seconds(0),
@@ -73,8 +74,8 @@ struct BenchmarkResult {
           checksum(0), checksum_stable(true) {}
 };
 
-// VmHWM is the high water mark of resident memory: the most the process ever
-// actually held, which is the number worth reporting.
+// VmHWM, resident memory'nin high water mark'ı: sürecin gerçekten tuttuğu en
+// yüksek miktar, yani raporlanmaya değer olan sayı.
 inline uint64_t peak_memory_kb() {
     std::ifstream f("/proc/self/status");
     if (!f) return 0;
@@ -85,7 +86,7 @@ inline uint64_t peak_memory_kb() {
             if (f >> kb) return kb;
             return 0;
         }
-        std::getline(f, key);   // skip the rest of the line
+        std::getline(f, key);   // satırın kalanını atla
     }
     return 0;
 }
@@ -98,14 +99,14 @@ inline BenchmarkResult run_benchmark(const Config& cfg,
     r.iterations   = iterations;
     r.sample_every = sampleEvery;
 
-    // Tie the cycle counter to real time before anything is measured with it.
+    // Cycle sayacını, onunla bir şey ölçülmeden önce gerçek zamana bağla.
     const double cyclesPerNs = calibrate_cycles_per_ns();
     const double nsPerCycle  = (cyclesPerNs > 0) ? 1.0 / cyclesPerNs : 1.0;
     r.tsc_ghz           = cyclesPerNs;
     r.tsc_resolution_ns = nsPerCycle;
     r.timer_overhead_ns = (double)measure_timer_overhead_cycles() * nsPerCycle;
 
-    // Warm-up. Not timed, not counted, and its results are thrown away.
+    // Warm-up. Ölçülmüyor, sayılmıyor, ve sonuçları atılıyor.
     {
         OrderLog log;
         Pipeline p(cfg, log);
@@ -117,7 +118,7 @@ inline BenchmarkResult run_benchmark(const Config& cfg,
 
     for (uint64_t i = 0; i < iterations; ++i) {
         OrderLog log;
-        Pipeline p(cfg, log);          // allocates; deliberately before the reset
+        Pipeline p(cfg, log);          // allocate ediyor; bilerek reset'ten önce
 
         alloc_reset();
         const uint64_t t0 = now_ns();
@@ -132,8 +133,7 @@ inline BenchmarkResult run_benchmark(const Config& cfg,
         if (first || seconds < r.best_seconds)  r.best_seconds  = seconds;
         if (first || seconds > r.worst_seconds) r.worst_seconds = seconds;
 
-        // Whatever the hot path did ask for, keep the worst case rather than
-        // the last one.
+        // Hot path ne istediyse, sonuncuyu değil en kötü durumu sakla.
         if (allocs > r.hot_path_allocations) r.hot_path_allocations = allocs;
         if (bytes  > r.hot_path_bytes)       r.hot_path_bytes       = bytes;
 
@@ -145,7 +145,7 @@ inline BenchmarkResult run_benchmark(const Config& cfg,
             r.target_messages        = s.target_messages;
             r.order_intents          = s.generated_order_count;
         } else if (s.checksum != r.checksum) {
-            r.checksum_stable = false;   // the same input stopped agreeing
+            r.checksum_stable = false;   // aynı input artık aynı sonucu vermiyor
         }
         first = false;
     }

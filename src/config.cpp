@@ -1,9 +1,9 @@
-// Config file parsing. Startup only, cold path.
+// Config dosyası parse etme. Sadece açılışta, cold path.
 //
-// Format is one `key = value` per line. Blank lines and lines starting with '#'
-// are ignored. Unknown keys, bad numbers and missing keys all fail loudly rather
-// than defaulting, because a wrong capacity only shows up much later and looks
-// like something else.
+// Format: satır başına bir `key = value`. Boş satırlar ve '#' ile başlayan
+// satırlar yok sayılıyor. Bilinmeyen key'ler, bozuk sayılar ve eksik key'lerin
+// hepsi default'a düşmek yerine yüksek sesle hata veriyor, çünkü yanlış bir
+// capacity ancak çok sonra ortaya çıkıyor ve bambaşka bir şeye benziyor.
 
 #include "core/config.hpp"
 
@@ -24,8 +24,8 @@ std::string trim(const std::string& s) {
     return s.substr(b, e - b);
 }
 
-// strtoll reports two different failures and both matter here: text that is not
-// a number at all, and a number too large for the type.
+// strtoll iki farklı başarısızlık bildiriyor ve burada ikisi de önemli: hiç sayı
+// olmayan bir text, ve type'a sığmayacak kadar büyük bir sayı.
 bool parseInt(const std::string& s, long long& out) {
     if (s.empty()) return false;
 
@@ -33,9 +33,9 @@ bool parseInt(const std::string& s, long long& out) {
     char* end = 0;
     const long long v = std::strtoll(s.c_str(), &end, 10);
 
-    if (end == s.c_str()) return false;   // no digits were read
-    if (*end != '\0')     return false;   // trailing junk, e.g. "100abc"
-    if (errno == ERANGE)  return false;   // outside long long
+    if (end == s.c_str()) return false;   // hiç rakam okunmadı
+    if (*end != '\0')     return false;   // sonda çöp var, mesela "100abc"
+    if (errno == ERANGE)  return false;   // long long'un dışında
 
     out = v;
     return true;
@@ -105,7 +105,7 @@ bool parse_config(const std::string& text, Config& out, std::string& error) {
             seenQty = true;
 
         } else if (key == "minimum_position") {
-            cfg.minimum_position = (Position)v;     // may be negative, that is the point
+            cfg.minimum_position = (Position)v;     // negatif olabilir, zaten olayı bu
             seenMin = true;
 
         } else if (key == "maximum_position") {
@@ -113,7 +113,7 @@ bool parse_config(const std::string& text, Config& out, std::string& error) {
             seenMax = true;
 
         } else if (key == "max_active_orders") {
-            // -1 switches the limit off. Anything else has to be a usable size.
+            // -1 limiti kapatıyor. Başka her şeyin kullanılabilir bir boyut olması gerek.
             if (v == -1) {
                 cfg.max_active_orders = DEFAULT_MAX_ACTIVE_ORDERS;
                 cfg.orders_limited    = false;

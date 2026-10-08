@@ -1,22 +1,22 @@
 #ifndef LLOB_APP_LATENCY_HPP
 #define LLOB_APP_LATENCY_HPP
 
-// Latency samples, kept as a histogram.
+// Latency örnekleri, histogram olarak tutuluyor.
 //
-// Percentiles need the distribution, and keeping every sample would mean
-// megabytes per iteration and allocation while measuring. A fixed array of
-// counters gives the same answer: one bucket per nanosecond up to four
-// microseconds, plus an overflow bucket and the true maximum alongside.
+// Percentile hesaplamak için dağılım gerekiyor, ve her örneği saklamak iterasyon
+// başına megabyte'lar ve ölçüm sırasında allocation demek olurdu. Sabit bir
+// sayaç array'i aynı cevabı veriyor: dört mikrosaniyeye kadar nanosaniye başına
+// bir bucket, artı bir overflow bucket'ı ve yanında gerçek maksimum.
 //
-// 4096 buckets is 32 KB, which stays in cache, and recording a sample is an
-// index and an increment.
+// 4096 bucket 32 KB ediyor, yani cache'te kalıyor, ve bir örnek kaydetmek bir
+// index ile bir increment'ten ibaret.
 //
-// Why percentiles at all. An average of fifty nanoseconds with one message in
-// a thousand taking fifty microseconds still averages a hundred, and still
-// looks fine. But the strategy only pays when it is first, and the slow cases
-// cluster where the feed is busiest - the largest timestamp group on this feed
-// holds 3,919 messages - which is exactly where the opportunities are. The
-// mean hides that. The tail is the thing.
+// Percentile'a neden gerek var. Ortalaması elli nanosaniye olan bir sistemde
+// binde bir message elli mikrosaniye sürse ortalama yine yüz çıkar ve yine iyi
+// görünür. Ama strategy sadece ilk olduğunda para ediyor, ve yavaş durumlar
+// feed'in en yoğun olduğu yerde kümeleniyor - bu feed'deki en büyük timestamp
+// group'u 3.919 message taşıyor - ki orası tam olarak fırsatların olduğu yer.
+// Ortalama bunu saklıyor. Asıl mesele tail.
 
 #include "core/types.hpp"
 
@@ -25,18 +25,17 @@
 
 namespace llob {
 
-// __builtin_ia32_rdtsc rather than <x86intrin.h>: that header drags in
-// <stdlib.h> through mm_malloc.h, and under -std=c++11 GCC 8 then fails to
-// declare ::abs and most of cstdlib. The builtin needs no header at all.
+// <x86intrin.h> yerine __builtin_ia32_rdtsc: o header mm_malloc.h üzerinden
+// <stdlib.h>'yi içeri çekiyor, ve -std=c++11 altında GCC 8 sonrasında ::abs ile
+// cstdlib'in çoğunu declare edemiyor. Builtin'in hiç header'a ihtiyacı yok.
 #if defined(__GNUC__) && defined(__x86_64__)
 #  define LLOB_HAVE_TSC 1
 #endif
 
-// steady_clock is monotonic and portable, and it times the whole pass. It is
-// not good enough for individual datagrams: measured on this machine it only
-// advances in steps of 99 ns, even though clock_getres claims 1 ns, so every
-// sample would land on a multiple of 99 and the percentiles would be
-// quantised into uselessness.
+// steady_clock monotonic ve portable, ve bütün pass'ı o ölçüyor. Tek tek
+// datagram'lar için yeterli değil: bu makinede ölçüldü, clock_getres 1 ns iddia
+// etmesine rağmen sadece 99 ns'lik adımlarla ilerliyor; yani her örnek 99'un bir
+// katına düşer ve percentile'lar işe yaramaz hale kuantalanırdı.
 inline uint64_t now_ns() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -44,18 +43,19 @@ inline uint64_t now_ns() {
 
 #ifdef LLOB_HAVE_TSC
 
-// The CPU's own cycle counter. Two reads cost about one cycle and it resolves
-// to a fraction of a nanosecond, which is what sampling a datagram needs.
+// CPU'nun kendi cycle sayacı. İki okumanın maliyeti yaklaşık bir cycle ve
+// çözünürlüğü bir nanosaniyenin kesri - bir datagram'ı örneklemek için gereken
+// tam olarak bu.
 //
-// Two things make it usable here. The counter is invariant on any modern
-// x86-64 part: it ticks at a fixed rate regardless of what the core clocks
-// itself to. And the thread is pinned, so it cannot migrate to a core whose
-// counter started at a different point.
+// Burada kullanılabilir olmasını iki şey sağlıyor. Sayaç modern her x86-64
+// parçasında invariant: çekirdek kendini kaç GHz'e ayarlarsa ayarlasın sabit
+// hızda tıklıyor. Ve thread pin'li, yani sayacı farklı bir noktadan başlamış bir
+// çekirdeğe göç edemiyor.
 inline uint64_t now_cycles() { return (uint64_t)__builtin_ia32_rdtsc(); }
 
-// Cycles mean nothing until they are tied to real time, so the rate is
-// measured once against steady_clock over a long enough window that its 99 ns
-// step does not matter.
+// Cycle'lar gerçek zamana bağlanmadan hiçbir şey ifade etmiyor, o yüzden oran
+// steady_clock'a karşı bir kez ölçülüyor - 99 ns'lik adımının önemsiz kalacağı
+// kadar uzun bir pencerede.
 inline double calibrate_cycles_per_ns() {
     const uint64_t w0 = now_ns();
     const uint64_t c0 = now_cycles();
@@ -70,21 +70,21 @@ inline double calibrate_cycles_per_ns() {
 
 #else
 
-// Without a cycle counter the wall clock has to do, coarse as it is.
+// Cycle sayacı yoksa, kaba da olsa duvar saatiyle idare etmek gerekiyor.
 inline uint64_t now_cycles() { return now_ns(); }
 inline double   calibrate_cycles_per_ns() { return 1.0; }
 
 #endif
 
-// What two back-to-back reads of the sampling clock cost, in cycles. Reported
-// alongside the percentiles so they can be read knowing what the instrument
-// itself contributes.
+// Örnekleme saatinin arka arkaya iki okumasının cycle cinsinden maliyeti.
+// Percentile'ların yanında raporlanıyor ki okuyan, ölçü aletinin kendisinin ne
+// kattığını bilerek baksın.
 inline uint64_t measure_timer_overhead_cycles() {
     uint64_t best = (uint64_t)-1;
     for (int i = 0; i < 20000; ++i) {
         const uint64_t a = now_cycles();
         const uint64_t b = now_cycles();
-        if (b - a < best) best = b - a;    // the minimum is the cleanest estimate
+        if (b - a < best) best = b - a;    // en temiz tahmin minimum olanı
     }
     return best;
 }
@@ -93,8 +93,8 @@ struct LatencyReport {
     uint64_t samples;
     uint64_t p50, p90, p99, p999, max;
     uint64_t mean;
-    uint64_t overflow;       // samples past the histogram's range
-    bool     saturated;      // a reported percentile fell in the overflow
+    uint64_t overflow;       // histogram'ın menzilini aşan örnekler
+    bool     saturated;      // raporlanan bir percentile overflow'a düştü
 
     LatencyReport()
         : samples(0), p50(0), p90(0), p99(0), p999(0), max(0),
@@ -103,7 +103,7 @@ struct LatencyReport {
 
 class LatencyHistogram {
 public:
-    static const std::size_t BUCKETS = 4096;    // 1 ns each, 0 .. 4095 ns
+    static const std::size_t BUCKETS = 4096;    // her biri 1 ns, 0 .. 4095 ns
 
     LatencyHistogram() { reset(); }
 
@@ -137,13 +137,13 @@ public:
     }
 
 private:
-    // Nearest rank: the smallest value that at least p of the samples are at
-    // or below. No interpolation between buckets, so every number reported is
-    // one that was actually observed.
+    // Nearest rank: örneklerin en az p kadarının altında veya eşit olduğu en
+    // küçük değer. Bucket'lar arasında interpolasyon yok, yani raporlanan her
+    // sayı gerçekten gözlenmiş bir değer.
     //
-    // Walks the buckets until the running total reaches the target share. A
-    // target that falls past the last bucket can only be answered with the
-    // maximum, and that is flagged rather than passed off as exact.
+    // Koşan toplam hedef paya ulaşana kadar bucket'ları yürüyor. Son bucket'ın
+    // ötesine düşen bir hedefe ancak maksimumla cevap verilebilir, ve bu kesin
+    // bir sonuç gibi sunulmak yerine flag'leniyor.
     uint64_t quantile(double p, bool& saturated) const {
         const uint64_t target = (uint64_t)(p * (double)count_);
         uint64_t seen = 0;

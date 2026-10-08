@@ -1,21 +1,22 @@
 #ifndef LLOB_CORE_TYPES_HPP
 #define LLOB_CORE_TYPES_HPP
 
-// Shared scalar types and enums. No logic, no includes beyond <cstdint>.
-// Pinning these early keeps fixed-point discipline: no float anywhere.
+// Ortak scalar type'lar ve enum'lar. Logic yok, <cstdint> dışında include yok.
+// Bunları en başta sabitlemek fixed-point disiplinini koruyor: hiçbir yerde
+// float kullanılmıyor.
 
 #include <cstdint>
 
 namespace llob {
 
-typedef int32_t  Price;        // kurus, SIGNED (ITCH price fields are signed)
+typedef int32_t  Price;        // kuruş, SIGNED (ITCH'te price field'ları signed)
 typedef uint64_t Quantity;
-typedef uint64_t OrderId;      // unique per (order book, side) only
+typedef uint64_t OrderId;      // sadece (order book, side) çiftinde unique
 typedef uint32_t OrderBookId;
-typedef uint64_t Timestamp;    // seconds * 1e9 + nanoseconds, composed from 'T' + msg
-typedef int64_t Position; // Min position -> negative --> if unsigned the whole thing 
-typedef int64_t Cash; // For cashflow --> *4b of headspace with typical sessions
-typedef uint32_t LevelIndex; // Index to keep track of the level
+typedef uint64_t Timestamp;    // second * 1e9 + nanosecond, 'T' + message'dan birleşiyor
+typedef int64_t Position; // minimum position negatif olabilir -> unsigned olsa altına wrap eder
+typedef int64_t Cash; // cash flow için -> tipik bir session'da milyarlarca kat headroom kalıyor
+typedef uint32_t LevelIndex; // price level'ı takip etmek için kullanılan index
 
 
 enum Side {
@@ -25,14 +26,14 @@ enum Side {
     SIDE_INVALID = 3
 };
 
-// ITCH data types: bit 31 set with all other bits zero means "no price",
-// and in Add Order it means a market order.
+// ITCH data type'ları: 31. bit set ve geri kalan her bit sıfırsa "price yok"
+// demek. Add Order mesajında ayrıca market order anlamına geliyor.
 static const Price PRICE_NOT_AVAILABLE = INT32_MIN;
 
 enum BookState {
     STATE_UNKNOWN = 0,
-    STATE_SUREKLI_ISLEM,       // P_SUREKLI_ISLEM  - strategy may run
-    STATE_MARJ_YAYIN_KAPANIS,  // P_MARJ_YAYIN_KAPANIS - end of day, mark to market
+    STATE_SUREKLI_ISLEM,       // P_SUREKLI_ISLEM - strateji çalışabilir
+    STATE_MARJ_YAYIN_KAPANIS,  // P_MARJ_YAYIN_KAPANIS - gün sonu, mark to market
     STATE_OTHER
 };
 

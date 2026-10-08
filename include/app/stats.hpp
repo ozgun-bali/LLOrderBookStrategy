@@ -1,16 +1,16 @@
 #ifndef LLOB_APP_STATS_HPP
 #define LLOB_APP_STATS_HPP
 
-// The run's result, and the checksum over it.
+// Run'ın sonucu, ve üzerinden hesaplanan checksum.
 //
-// The checksum does two jobs. It proves determinism: the same input and config
-// must produce the same value every time. And it keeps the optimiser honest in
-// benchmark mode, where nothing is printed - without a value that leaves the
-// program, -O3 is free to decide the whole computation is dead and delete it,
-// and the measurement would be of nothing.
+// Checksum iki iş yapıyor. Determinizmi kanıtlıyor: aynı input ve aynı config
+// her seferinde aynı değeri üretmek zorunda. Ve benchmark modunda hiçbir şey
+// basılmadığı için optimizer'ı dürüst tutuyor - programdan çıkan bir değer
+// olmazsa -O3 bütün hesabın ölü olduğuna karar verip silmekte serbest, ve ölçüm
+// hiçbir şeyin ölçümü olurdu.
 //
-// FNV-1a is enough for both. It is order dependent, cheap, and not pretending
-// to be cryptographic.
+// FNV-1a ikisi için de yeterli. Sıraya duyarlı, ucuz, ve kriptografik olma
+// iddiası yok.
 
 #include "core/types.hpp"
 #include "app/order_log.hpp"
@@ -30,8 +30,8 @@ inline uint64_t fnv1a_u64(uint64_t hash, uint64_t v) {
     return hash;
 }
 
-// Everything the assignment asks the program to print, gathered in one place
-// so the reporter takes one argument and the checksum has one thing to fold.
+// Assignment'ın programdan basmasını istediği her şey tek bir yerde toplanmış;
+// böylece reporter tek argüman alıyor ve checksum'ın katlayacağı tek bir şey var.
 struct RunSummary {
     Position position;
     Cash     cash_flow;
@@ -41,9 +41,9 @@ struct RunSummary {
     bool  have_last_execution;
     Price last_execution_price;
 
-    // The price the day was marked at, captured when P_MARJ_YAYIN_KAPANIS
-    // arrived. The feed keeps trading afterwards, so this is usually not the
-    // last price in the file, and without it the P&L does not appear to add up.
+    // Günün hangi price'tan mark edildiği; P_MARJ_YAYIN_KAPANIS geldiğinde
+    // yakalanıyor. Feed sonrasında işlem görmeye devam ettiği için bu genelde
+    // dosyadaki son price değil, ve bu olmadan P&L tutmuyormuş gibi görünüyor.
     bool  have_mark_price;
     Price mark_price;
 
@@ -66,9 +66,9 @@ struct RunSummary {
 
     uint64_t checksum;
 
-    // Why the strategy stayed quiet. Not part of the required output, but the
-    // difference between "no opportunity arose" and "a rule is wrong" is only
-    // visible here.
+    // Strategy'nin neden sessiz kaldığı. Zorunlu output'un parçası değil, ama
+    // "hiç fırsat çıkmadı" ile "bir kural yanlış" arasındaki fark sadece burada
+    // görünüyor.
     uint64_t evaluations;
     uint64_t skip_state;
     uint64_t skip_sequence;
@@ -95,9 +95,9 @@ struct RunSummary {
           skip_no_direction(0), skip_duplicate(0), skip_position_limit(0) {}
 };
 
-// Folds the orders first, in the order they were produced, then the end state.
-// Any difference in what was decided, or in what the book ended up as, moves
-// the value.
+// Önce order'ları üretildikleri sırayla katlıyor, sonra son durumu. Neyin karara
+// bağlandığında ya da book'un nerede bittiğinde herhangi bir fark, değeri
+// değiştiriyor.
 inline uint64_t compute_checksum(const RunSummary& s, const OrderLog& log) {
     uint64_t h = FNV_OFFSET;
 

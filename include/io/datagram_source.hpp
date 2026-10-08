@@ -1,29 +1,29 @@
 #ifndef LLOB_IO_DATAGRAM_SOURCE_HPP
 #define LLOB_IO_DATAGRAM_SOURCE_HPP
 
-// Finds where one MoldUDP64 packet ends and the next begins.
+// Bir MoldUDP64 packet'inin nerede bitip bir sonrakinin nerede başladığını bulur.
 //
-// Over the wire this question never comes up: MoldUDP64 runs on UDP, and the
-// operating system hands over one complete datagram at a time with its length.
-// That is why process_datagram takes a pointer and a length rather than
-// working out the boundary itself.
+// Wire üzerinde bu soru hiç ortaya çıkmıyor: MoldUDP64 UDP üzerinde koşuyor ve
+// işletim sistemi her seferinde tam bir datagram'ı uzunluğuyla birlikte veriyor.
+// process_datagram'ın sınırı kendi hesaplamak yerine bir pointer ve bir length
+// almasının sebebi bu.
 //
-// Reading from a file there is no such envelope - 584 MB of packets glued
-// together with nothing between them. The boundary has to be recovered, and it
-// can only be computed:
+// Dosyadan okurken böyle bir zarf yok - aralarında hiçbir şey olmadan
+// yapıştırılmış 584 MB'lık packet. Sınırın geri kazanılması gerekiyor, ve bu
+// ancak hesaplanabilir:
 //
-//     packet length = 20 + sum over blocks of (2 + block length)
+//     packet length = 20 + her block için (2 + block length) toplamı
 //
-// Confirmed against the sample feed: no pcap magic number, and walking it this
-// way lands exactly on the last byte after 519,492 packets.
+// Sample data üzerinde doğrulandı: pcap magic number yok, ve bu şekilde
+// yürümek 519.492 packet sonra tam olarak son byte'a oturuyor.
 //
-// Only the lengths are read here, never the payloads: the message count, then
-// two bytes per block. About 62 bytes to establish that a 248-byte packet is
-// 248 bytes long, and those same bytes are in L1 by the time MoldSession reads
-// them again.
+// Burada sadece length'ler okunuyor, payload'lar asla: önce message count, sonra
+// block başına iki byte. 248 byte'lık bir packet'in 248 byte olduğunu tespit
+// etmek yaklaşık 62 byte okumak demek, ve MoldSession onları tekrar okuduğunda
+// aynı byte'lar zaten L1'de oluyor.
 //
-// Keeping this separate means a feed stored as pcap, or with length-prefixed
-// records, is a change to one file.
+// Bunu ayrı tutmak, pcap olarak saklanmış ya da length-prefix'li kayıtlardan
+// oluşan bir feed'in tek bir dosyalık değişiklik olması anlamına geliyor.
 
 #include "core/types.hpp"
 #include "protocol/mold_udp64.hpp"
@@ -40,13 +40,13 @@ public:
     std::size_t offset()    const { return offset_; }
     uint64_t    packets()   const { return packets_; }
 
-    // True when the walk could not reach the end: a header or a block running
-    // past the buffer. Everything after that point is unreadable, because the
-    // next boundary can no longer be computed.
+    // Yürüyüş sona ulaşamadığında true: buffer'ın dışına taşan bir header ya da
+    // block. O noktadan sonrası okunamaz, çünkü bir sonraki sınır artık
+    // hesaplanamıyor.
     bool truncated() const { return truncated_; }
 
-    // Hands out a view into the buffer; nothing is copied. Returns false at the
-    // end of the data, or once the walk has broken.
+    // Buffer'ın içine bir view veriyor; hiçbir şey kopyalanmıyor. Data bittiğinde
+    // ya da yürüyüş bozulduğunda false dönüyor.
     bool next(const uint8_t*& out, std::size_t& len) {
         if (truncated_ || offset_ >= size_) return false;
 
@@ -61,14 +61,14 @@ public:
     }
 
 private:
-    // Walks the block lengths to find the total. Reads no payload.
+    // Toplamı bulmak için block length'leri yürüyor. Hiç payload okumuyor.
     bool measure(std::size_t start, std::size_t& outLen) const {
         if (start + MOLD_HEADER_LEN > size_) return false;
 
         const uint16_t count = be16(start + MOLD_OFF_COUNT);
 
-        // A heartbeat carries no blocks, and the end-of-session marker is not
-        // a count at all. Both are a bare header.
+        // Heartbeat hiç block taşımıyor, end of session marker'ı ise zaten bir
+        // count değil. İkisi de çıplak bir header.
         if (count == MOLD_COUNT_HEARTBEAT || count == MOLD_COUNT_END_OF_SESSION) {
             outLen = MOLD_HEADER_LEN;
             return true;

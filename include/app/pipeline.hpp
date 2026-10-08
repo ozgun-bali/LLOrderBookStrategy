@@ -1,16 +1,17 @@
 #ifndef LLOB_APP_PIPELINE_HPP
 #define LLOB_APP_PIPELINE_HPP
 
-// The whole chain, assembled.
+// Bütün zincir, kurulmuş hali.
 //
-// Construction and the run are kept apart on purpose. Building the book and
-// the pools allocates; the run must not. Separating them lets the benchmark
-// reset the allocation counter in between and report what the hot path alone
-// asked for.
+// Kurulum ile run bilerek ayrı tutuluyor. Book'u ve pool'ları inşa etmek
+// allocate ediyor; run etmemeli. İkisini ayırmak, benchmark'ın araya
+// allocation sayacının reset'ini koymasına ve sadece hot path'in ne istediğini
+// raporlamasına imkân veriyor.
 //
-// Everything is constructed fresh, so an iteration always starts from an empty
-// book. Reusing one across iterations would make the second pass do different
-// work from the first and the result would stop being reproducible.
+// Her şey sıfırdan kuruluyor, yani bir iterasyon her zaman boş bir book'la
+// başlıyor. Aynısını iterasyonlar arasında yeniden kullanmak ikinci pass'a
+// birinciden farklı bir iş yaptırırdı ve sonuç tekrar üretilebilir olmaktan
+// çıkardı.
 
 #include "core/config.hpp"
 #include "io/datagram_source.hpp"
@@ -27,9 +28,9 @@
 
 namespace llob {
 
-// An intent has to reach two places: the fill model, which turns it into a
-// position, and the log, which keeps it for the CSV and the checksum. Rather
-// than give either of them the other's job, the strategy writes here.
+// Bir intent'in iki yere ulaşması gerekiyor: onu position'a çeviren fill
+// model'i, ve CSV ile checksum için saklayan log. İkisinden birine diğerinin
+// işini yüklemek yerine strategy buraya yazıyor.
 struct RunSink {
     FillSimulator& fills;
     OrderLog&      log;
@@ -60,9 +61,9 @@ public:
           mold_(parser_),
           packets_(0), offset_(0), truncated_(false), closed_(false) {}
 
-    // One pass over the data. With a histogram, every `sampleEvery`-th
-    // datagram is timed: the clock costs about as much as a short datagram
-    // takes, so timing all of them would measure the instrument.
+    // Data üzerinden tek bir pass. Histogram verilirse her `sampleEvery`'inci
+    // datagram ölçülüyor: saatin maliyeti kısa bir datagram'ın süresine yakın
+    // olduğu için hepsini ölçmek ölçü aletini ölçmek olurdu.
     void run(const uint8_t* data, std::size_t size,
              LatencyHistogram* hist = 0, unsigned sampleEvery = 8,
              double nsPerCycle = 1.0) {
@@ -83,8 +84,8 @@ public:
                 mold_.process_datagram(packet, length);
             }
 
-            // The day is valued when the close arrives, not at end of file:
-            // the feed keeps trading afterwards and the last price drifts.
+            // Gün, kapanış geldiğinde değerleniyor, dosya sonunda değil: feed
+            // sonrasında işlem görmeye devam ediyor ve son price kayıyor.
             if (!closed_ && book_.day_closed()) {
                 closed_ = true;
                 position_.mark_end_of_day(book_.has_last_execution(),
@@ -160,8 +161,8 @@ public:
     }
 
 private:
-    // Declaration order is construction order, and each one below needs the
-    // one above it.
+    // Bildirim sırası inşa sırası demek, ve aşağıdaki her üye bir üstündekine
+    // ihtiyaç duyuyor.
     OrderBook       book_;
     PositionTracker position_;
     FillSimulator   fills_;

@@ -1,23 +1,23 @@
 #ifndef LLOB_BOOK_GROUP_JOURNAL_HPP
 #define LLOB_BOOK_GROUP_JOURNAL_HPP
 
-// What each price level looked like when the current timestamp group started.
+// Her price level'ın, içinde bulunduğumuz timestamp group'u başladığında nasıl
+// göründüğü.
 //
-// The strategy runs on a completed group and has to answer three questions the
-// finished book cannot: was this price occupied before the group, which side
-// was it on, and did it change sides during the group. Only a record kept while
-// the group was running can say.
+// Strategy tamamlanmış bir group üzerinde çalışıyor ve bitmiş book'un
+// cevaplayamadığı üç soruyu cevaplamak zorunda: bu price group'tan önce dolu
+// muydu, hangi side'daydı, ve group sırasında side değiştirdi mi. Bunu ancak
+// group çalışırken tutulan bir kayıt söyleyebilir.
 //
-// Snapshotting the book per group is out of the question - 16k levels across
-// 197k groups on the sample feed. Instead only the prices actually touched are
-// recorded, and the first touch is the one that counts: at that moment nothing
-// in this group has changed the level yet, so what it holds is the pre-group
-// state.
+// Group başına book'un snapshot'ını almak söz konusu değil - sample data'da 197
+// bin group'a karşı 16 bin level var. Onun yerine sadece gerçekten dokunulan
+// price'lar kaydediliyor, ve asıl önemli olan ilk dokunuş: o anda bu group'ta
+// level'ı henüz hiçbir şey değiştirmemiş, yani içindeki şey group öncesi durum.
 //
-// Clearing is the other half of the problem. Wiping the arrays between groups
-// would be as expensive as snapshotting, so nothing is wiped: every entry
-// carries the group number it was written for, and a stale entry is simply one
-// whose number no longer matches. Ending a group is ++current_.
+// İşin diğer yarısı temizlik. Array'leri group'lar arasında silmek snapshot
+// almak kadar pahalı olurdu, o yüzden hiçbir şey silinmiyor: her entry kendisinin
+// hangi group için yazıldığını taşıyor, ve stale bir entry sadece numarası artık
+// tutmayan entry demek. Bir group'u bitirmek ++current_ etmekten ibaret.
 
 #include "core/types.hpp"
 
@@ -31,20 +31,20 @@ public:
     explicit GroupJournal(std::size_t max_levels)
         : generation_(max_levels, 0), before_(max_levels, 0),
           touched_(max_levels, 0), current_(1) {
-        // Entries start at generation 0 and the first group is 1, so every
-        // slot reads as untouched before anything happens.
+        // Entry'ler generation 0'dan başlıyor ve ilk group 1, yani hiçbir şey
+        // olmadan önce her slot "dokunulmamış" okunuyor.
         assert(max_levels > 0);
     }
 
     uint32_t group() const { return current_; }
 
-    // Ends the group that was running and starts the next one. Every entry
-    // written for the old group becomes stale by arithmetic alone.
+    // Çalışmakta olan group'u bitirip bir sonrakini başlatıyor. Eski group için
+    // yazılmış her entry sırf aritmetik sayesinde stale oluyor.
     void begin_group() { ++current_; }
 
-    // Called by PriceLevels before it changes a level, while the level still
-    // holds whatever it held. `side` is the side about to change; the two flags
-    // are the occupancy of this price right now, on each side.
+    // PriceLevels bir level'ı değiştirmeden hemen önce, level hâlâ eski halini
+    // tutarken çağırıyor. `side` birazdan değişecek olan side; iki flag ise bu
+    // price'ın şu andaki doluluk durumu, her side için ayrı.
     void note(std::size_t index, Side side, bool bid_occupied, bool ask_occupied) {
         assert(index < generation_.size());
         assert(side == SIDE_BUY || side == SIDE_SELL);
@@ -52,7 +52,7 @@ public:
         if (generation_[index] != current_) {
             generation_[index] = current_;
             before_[index]     = (uint8_t)sideOf(bid_occupied, ask_occupied);
-            touched_[index]    = 0;          // the stale mask from an old group
+            touched_[index]    = 0;          // eski group'tan kalan stale mask
         }
         touched_[index] |= (uint8_t)(1u << side);
     }
@@ -62,17 +62,17 @@ public:
         return generation_[index] == current_;
     }
 
-    // Which side held this price when the group started. SIDE_INVALID means it
-    // was empty, so nothing disappeared from it and there is no direction to
-    // take. Only meaningful where changed_this_group() is true.
+    // Group başladığında bu price hangi side'daydı. SIDE_INVALID boştu demek,
+    // yani oradan bir şey kaybolmadı ve alınacak bir yön yok. Sadece
+    // changed_this_group() true olduğunda anlamlı.
     Side side_before(std::size_t index) const {
         assert(changed_this_group(index));
         return (Side)before_[index];
     }
 
-    // Both sides changed during the group. In a book that never crosses, that
-    // means the price moved from one side to the other, which is a price moving
-    // through the level rather than liquidity going missing from it.
+    // Group sırasında iki side da değişmiş. Cross olmayan bir book'ta bu, price'ın
+    // bir side'dan diğerine geçtiği anlamına geliyor - yani level'dan likidite
+    // kaybolması değil, price'ın o level'ın içinden geçip gitmesi.
     bool flipped(std::size_t index) const {
         assert(index < generation_.size());
         if (generation_[index] != current_) return false;
@@ -88,9 +88,9 @@ private:
     static const uint8_t BID_BIT = 1u << SIDE_BUY;    // 0b01
     static const uint8_t ASK_BIT = 1u << SIDE_SELL;   // 0b10
 
-    // A price on both sides at once means the book was crossed, which should
-    // not survive a group boundary. Treated as unknown so no direction is read
-    // out of it.
+    // Bir price'ın aynı anda iki side'da olması book'un cross olduğu anlamına
+    // geliyor, ve bu bir group sınırını geçmemeli. Buradan yön okunmasın diye
+    // "bilinmiyor" sayılıyor.
     static Side sideOf(bool bid, bool ask) {
         if (bid && ask) return SIDE_INVALID;
         if (bid)        return SIDE_BUY;

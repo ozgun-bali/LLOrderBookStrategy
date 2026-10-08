@@ -1,14 +1,16 @@
 #ifndef LLOB_PROTOCOL_ITCH_MESSAGES_HPP
 #define LLOB_PROTOCOL_ITCH_MESSAGES_HPP
 
-// ITCH message field offsets and decoded views.
+// ITCH message field offset'leri ve decode edilmiş view'ları.
 //
-// All offsets verified against BISTECH ITCH Protocol Specification (BIST v2112).
-// Numeric = unsigned big-endian. Price = SIGNED big-endian 4 bytes.
-// Alpha = left justified, space padded, ISO 8859-1, NOT null terminated.
+// Bütün offset'ler BISTECH ITCH Protocol Specification (BIST v2112) ile
+// doğrulandı.
+// Numeric = unsigned big-endian. Price = SIGNED big-endian, 4 byte.
+// Alpha = sola yaslı, space ile pad'lenmiş, ISO 8859-1, null terminator YOK.
 //
-// Decoding assumes the caller already checked the length with ByteReader::has().
-// The structs are stack locals that -O3 keeps in registers; nothing allocates.
+// Decode işlemi, caller'ın uzunluğu ByteReader::has() ile zaten kontrol ettiğini
+// varsayıyor. Struct'lar stack'te local; -O3 onları register'da tutuyor, hiçbiri
+// allocate etmiyor.
 
 #include "core/types.hpp"
 #include "core/byte_reader.hpp"
@@ -17,7 +19,7 @@
 
 namespace llob {
 
-// ---------------------------------------------------------------- message types
+// ----------------------------------------------------------------- message type
 
 static const uint8_t MSG_SECONDS         = 'T';
 static const uint8_t MSG_BOOK_STATE      = 'O';
@@ -25,12 +27,13 @@ static const uint8_t MSG_ADD_ORDER       = 'A';
 static const uint8_t MSG_ORDER_EXECUTED  = 'E';
 static const uint8_t MSG_ORDER_DELETE    = 'D';
 
-// Skipped, but named because the README has to explain what ignoring them costs:
-// 'C' also reduces an order's quantity, 'Y' clears the whole book.
+// Handle edilmiyor, ama isimlendirildi çünkü README'de bunları skip etmenin
+// bedelini açıklamak gerekiyor: 'C' de bir order'ın quantity'sini azaltıyor,
+// 'Y' ise bütün book'u temizliyor.
 static const uint8_t MSG_EXECUTED_PRICE  = 'C';
 static const uint8_t MSG_BOOK_FLUSH      = 'Y';
 
-// ---------------------------------------------------------------- fixed lengths
+// -------------------------------------------------------------- fixed length'ler
 
 static const std::size_t LEN_SECONDS        = 5;
 static const std::size_t LEN_BOOK_STATE     = 29;
@@ -38,16 +41,16 @@ static const std::size_t LEN_ADD_ORDER      = 45;
 static const std::size_t LEN_ORDER_EXECUTED = 52;
 static const std::size_t LEN_ORDER_DELETE   = 18;
 
-// ---------------------------------------------------------------- field offsets
+// ------------------------------------------------------------- field offset'leri
 
-// Every message starts the same way.
+// Her message aynı şekilde başlıyor.
 static const std::size_t OFF_MSG_TYPE = 0;
 static const std::size_t OFF_NANOS    = 1;
 
 // 'T' Seconds
 static const std::size_t OFF_SECOND = 1;
 
-// 'O' Order Book State — note the book id sits at 5 here, not 13
+// 'O' Order Book State — dikkat: book id burada 13'te değil, 5'te
 static const std::size_t OFF_STATE_BOOK_ID = 5;
 static const std::size_t OFF_STATE_NAME    = 9;
 static const std::size_t LEN_STATE_NAME    = 20;
@@ -70,10 +73,11 @@ static const std::size_t OFF_DEL_ORDER_ID = 5;
 static const std::size_t OFF_DEL_BOOK_ID  = 13;
 static const std::size_t OFF_DEL_SIDE     = 17;
 
-// ---------------------------------------------------------------- state names
+// -------------------------------------------------------------------- state name
 
-// 20-byte Alpha fields, space padded. Compared with memcmp so the hot path
-// never builds a std::string. The trailing NUL of each literal is not compared.
+// 20 byte'lık Alpha field'lar, space ile pad'lenmiş. memcmp ile compare ediliyor
+// ki hot path hiç std::string kurmasın. Literal'lerin sonundaki NUL compare'e
+// girmiyor.
 static const char STATE_NAME_SUREKLI_ISLEM[]      = "P_SUREKLI_ISLEM     ";
 static const char STATE_NAME_MARJ_YAYIN_KAPANIS[] = "P_MARJ_YAYIN_KAPANIS";
 
@@ -85,17 +89,17 @@ inline BookState book_state_from_name(const uint8_t* p) {
     return STATE_OTHER;
 }
 
-// ---------------------------------------------------------------- side
+// ------------------------------------------------------------------------- side
 
-// The wire can carry anything, so an unrecognised byte becomes SIDE_INVALID
-// rather than silently indexing a per-side table as if it were a buy.
+// Wire'dan her şey gelebilir, o yüzden tanınmayan bir byte sessizce buy gibi
+// davranıp side başına tutulan table'ı index'lemek yerine SIDE_INVALID oluyor.
 inline Side side_from_char(uint8_t c) {
     if (c == 'B') return SIDE_BUY;
     if (c == 'S') return SIDE_SELL;
     return SIDE_INVALID;
 }
 
-// ---------------------------------------------------------------- decoded views
+// ------------------------------------------------------- decode edilmiş view'lar
 
 struct AddOrderMsg {
     uint32_t nanos;
@@ -109,7 +113,7 @@ struct OrderExecutedMsg {
     uint32_t nanos;
     OrderId  order_id;
     Side     side;
-    Quantity quantity;      // a delta to subtract, not a running total
+    Quantity quantity;      // çıkarılacak delta, running total değil
 };
 
 struct OrderDeleteMsg {
@@ -123,10 +127,10 @@ struct BookStateMsg {
     BookState state;
 };
 
-// ---------------------------------------------------------------- decoders
+// ---------------------------------------------------------------------- decoder
 //
-// The order book id is deliberately not decoded here: the parser reads it
-// straight off the buffer and drops non-target messages before any of this runs.
+// Order book id'si burada bilerek decode edilmiyor: parser onu doğrudan buffer'dan
+// okuyup, target dışındaki message'ları buraya hiç gelmeden filtreliyor.
 
 inline void decode_add_order(const ByteReader& r, AddOrderMsg& out) {
     assert(r.has(LEN_ADD_ORDER));
@@ -158,7 +162,7 @@ inline void decode_book_state(const ByteReader& r, BookStateMsg& out) {
     out.state = book_state_from_name(r.raw(OFF_STATE_NAME));
 }
 
-// Length a message of this type must have, or 0 when the type is not handled.
+// Bu type'taki bir message'ın sahip olması gereken uzunluk; handle edilmiyorsa 0.
 inline std::size_t expected_length(uint8_t type) {
     switch (type) {
         case MSG_SECONDS:        return LEN_SECONDS;
