@@ -1,35 +1,33 @@
 # Low Latency Order Book and Strategy
 
-MoldUDP64 / BISTECH ITCH market data replay, order book reconstruction, one-tick
-gap strategy and P&L simulation.
+MoldUDP64 / BISTECH ITCH market data replay, order book reconstruction, tek tick'lik
+gap stratejisi ve P&L simülasyonu.
 
-## Build
+## Derleme
 
 ```
 make          # release, -O3 -DNDEBUG
-make debug    # -O0 -g, invariant checks enabled
-make check    # build and run tests
+make debug    # -O0 -g, invariant kontrolleri açık
+make check    # testleri derleyip çalıştır
 ```
 
-Target toolchain: GCC 8.5.0, C++11, Linux x86-64. No external dependencies.
+Hedef toolchain: GCC 8.5.0, C++11, Linux x86-64. Hiçbir external dependency yok.
 
-## Run
+## Çalıştırma
 
 ```
 ./orderbook --input sample.bin --config config.txt [--orders orders.csv]
 taskset -c 4 ./orderbook --benchmark sample.bin --iterations 50 --config config.txt
 ```
 
-The first prints the summary to stdout and writes the orders to a CSV. The
-second replays the data and reports throughput, latency, allocations and the
-checksum. Pin it to a core: without that the scheduler moves the thread
-between cores and the tail picks up cold caches that have nothing to do with
-the code.
+Birincisi özeti stdout'a basıyor ve order'ları CSV'ye yazıyor. İkincisi data'yı tekrar
+oynatıp throughput, latency, allocation ve checksum raporluyor. Benchmark'ı tek
+çekirdeğe pinle: pinlemezsen scheduler thread'i çekirdekler arasında gezdiriyor ve
+kuyruk, kodla hiç alakası olmayan soğuk cache'leri toplamaya başlıyor.
 
-## Results on the sample feed
+## Örnek veride sonuçlar
 
-`itch_data_250815_HI2.dat` with the supplied configuration, 584 MB in about
-three seconds:
+`itch_data_250815_HI2.dat`, verilen config ile. 584 MB, yaklaşık üç saniye:
 
 ```
 final_position          = 300
@@ -41,367 +39,385 @@ generated_order_count   = 1491          (747 buy, 744 sell)
 checksum                = 0x45F146A704E0878C
 ```
 
-The P&L reconciles: `-6,157,000 + 300 x 19,160 = -409,000`. The mark uses the
-price at the close, not the last price in the file, which is why both are
-printed.
+P&L tutuyor: `-6.157.000 + 300 × 19.160 = -409.000`. Mark fiyatı kapanıştaki fiyat,
+dosyadaki son fiyat değil — ikisini birden basmamın sebebi bu.
 
-Where the 197,463 evaluations went:
+197.463 evaluation nereye gitti:
 
-| Outcome | Count |
+| Sonuç | Adet |
 |---|---|
-| spread was not two ticks | 179,951 |
-| gap was not opened by that group | 15,532 |
-| position limit left no room | 380 |
-| outside continuous trading | 109 |
-| **order sent** | **1,491** |
+| spread iki tick değildi | 179.951 |
+| gap'i o group açmamıştı | 15.532 |
+| position limiti yer bırakmadı | 380 |
+| continuous trading dışındaydı | 109 |
+| **order gönderildi** | **1.491** |
 
-Running it twice gives byte-identical output, summary and CSV.
+İki kez çalıştırınca özet de CSV de byte byte aynı çıkıyor.
 
-**The strategy loses money on this day.** That is what the fill model implies
-rather than a bug: every order is treated as filled, while in a real market the
-orders that fill are disproportionately the ones you would rather had not. See
-Known limitations.
+**Strateji bu günde para kaybediyor.** Bu bir bug değil, fill model'in doğal sonucu:
+üretilen her order fill olmuş sayılıyor, oysa gerçek piyasada fill olan order'lar
+ağırlıklı olarak keşke olmasaydı dediklerin oluyor. Known limitations bölümüne bak.
 
-## Architecture
+## Mimari
 
-Data moves in one direction. Each step does one job and passes the result on.
+Data tek yönde akıyor. Her adım tek bir iş yapıp sonucu bir sonrakine veriyor.
 
 ```
-input file
-   -> DatagramSource    split the file into MoldUDP64 packets
-   -> MoldSession       check the header, follow sequence numbers, cut out blocks
-   -> ItchParser        read the message type, keep the clock, drop other books
-   -> OrderBook         apply add / execute / delete, track best bid and ask
-   -> Engine            close a timestamp group, then run the strategy once
-   -> GapStrategy       produce an order when the rules allow it
-   -> FillSimulator     turn that order into a fill
-   -> Position          cash flow, position, end of day P&L
+input dosyası
+   -> DatagramSource    dosyayı MoldUDP64 packet'lerine böl
+   -> MoldSession       header'ı kontrol et, sequence'i takip et, block'ları çıkar
+   -> ItchParser        message type'ı oku, saati tut, diğer book'ları ele
+   -> OrderBook         add / execute / delete uygula, best bid ve ask'i takip et
+   -> Engine            timestamp group'unu kapat, sonra stratejiyi bir kez çalıştır
+   -> GapStrategy       kurallar izin veriyorsa bir order üret
+   -> FillSimulator     o order'ı fill'e çevir
+   -> Position          cash flow, position, gün sonu P&L
 ```
 
-Each step only knows about the next one through a template parameter, not through a
-base class. The call is resolved at compile time, so there is no virtual dispatch in
-the hot path, and tests can put a small recorder in place of the real next step.
+Her adım bir sonrakini base class üzerinden değil, bir template parametresi üzerinden
+tanıyor. Çağrı derleme zamanında çözülüyor, yani hot path'te virtual dispatch yok, ve
+testler gerçek adımın yerine küçük bir recorder koyabiliyor.
 
-| Component | What it is responsible for |
+| Bileşen | Neden sorumlu |
 |---|---|
-| `core/byte_reader.hpp` | safe reads from a byte buffer: bounds, big-endian, no alignment assumptions |
-| `core/types.hpp` | the scalar types and enums everything else shares |
-| `protocol/itch_messages.hpp` | field offsets, message lengths, decoding into small structs |
-| `protocol/mold_udp64.hpp` | packet framing, session tracking, sequence state machine |
-| `protocol/itch_parser.hpp` | type dispatch, the `'T'` clock, the target book filter |
+| `core/types.hpp` | herkesin paylaştığı scalar type'lar ve enum'lar |
+| `core/byte_reader.hpp` | byte buffer'dan güvenli okuma: sınır, big-endian, alignment varsayımı yok |
+| `core/config.hpp` · `src/config.cpp` | yedi parametre, açılışta bir kez, eksik key hata |
+| `io/datagram_source.hpp` | dosyada packet sınırını bulma |
+| `protocol/itch_messages.hpp` | field offset'leri, message uzunlukları, küçük struct'lara decode |
+| `protocol/mold_udp64.hpp` | packet framing, session takibi, sequence state machine |
+| `protocol/itch_parser.hpp` | type dispatch, `'T'` saati, target book filtresi |
+| `book/order_pool.hpp` | sabit kapasiteli order deposu + order id index'i |
+| `book/price_levels.hpp` | price başına toplamlar, best bid/ask, occupancy bitset'i |
+| `book/group_journal.hpp` | her level'ın group başındaki hali |
+| `book/order_book.hpp` | dört ITCH message'ının ne anlama geldiği |
+| `strategy/order_intent.hpp` | stratejinin çıktı tipi ve sink kavramı |
+| `strategy/gap_strategy.hpp` | yedi kural, position limiti, skip sayaçları |
+| `sim/fill_simulator.hpp` | order intent → fill (değiştirilebilir olsun diye ayrı) |
+| `sim/position.hpp` | position, cash flow, gün sonu mark to market |
+| `app/engine.hpp` | timestamp grouping ve stratejinin ne zaman çalışacağı |
+| `app/pipeline.hpp` | bütün zinciri kurup bir pass koşturan sınıf |
+| `app/order_log.hpp` · `app/stats.hpp` | üretilen order'lar ve FNV-1a checksum |
+| `app/latency.hpp` · `app/alloc_counter.hpp` | histogram + percentile, allocation sayacı |
+| `app/benchmark.hpp` | warm-up, N pass replay, determinizm doğrulaması |
+| `app/reporter.hpp` · `src/reporter.cpp` | deterministik özet ve orders.csv |
+| `src/main.cpp` | CLI, dosyayı belleğe alma, mod seçimi |
 
-The order book, strategy, fill model and P&L are the remaining pieces.
+## Veri yapıları ve nedenleri
 
-## Data structures and why
+**`ByteReader` bir view, kopya değil.** İçinde bir pointer ve bir uzunluk var.
+`slice()` aynı bellek üzerinde daha küçük bir view açıyor, yani bir packet'in içinden
+bir message çıkarmanın maliyeti sıfır. Input dosyası bir kez belleğe alınıyor ve bütün
+reader'lar onun içine bakıyor.
 
-**`ByteReader` is a view, not a copy.** It holds a pointer and a length. `slice()`
-makes a smaller view over the same memory, so cutting a message out of a packet costs
-nothing. The input file is read into memory once and every reader points into it.
+**Okumalar byte byte yapılıyor.** `*(uint32_t*)(p + 13)` gibi bir cast üç ayrı sebepten
+yanlış olurdu: dosya big-endian, x86 little-endian; offset 13 dört byte'lık bir okuma
+için hizalı değil; ve cast, byte'ların gerçekten orada olup olmadığını kontrol etmiyor.
+Byte byte okuyup kaydırmak üçünü birden çözüyor. `-O3` döngüyü tek bir `bswap`'a geri
+katladığı için okunabilir kod bedavaya geliyor.
 
-**Reads go one byte at a time.** A cast like `*(uint32_t*)(p + 13)` would be wrong three
-times over: the file is big-endian while x86 is little-endian, offset 13 is not aligned
-for a 4-byte read, and a cast does not check that the bytes exist. Reading byte by byte
-and shifting solves all three. `-O3` turns the loop back into a single `bswap`, so the
-clearer code costs nothing.
+**Sınır kontrolü field başına değil, message başına yapılıyor.** İşlenen her message'ın
+sabit bir uzunluğu var, yani tek bir `has(45)` çağrısı bir Add Order'ın on bir field'ının
+da buffer'ın içinde olduğunu kanıtlıyor. On bir karşılaştırma yerine bir tane. Field
+okuyucularında emniyet olarak birer `assert` duruyor, onlar da `-DNDEBUG` ile yok oluyor.
 
-**Bounds are checked once per message, not once per field.** Every handled message has a
-fixed length, so one `has(45)` proves that all eleven fields of an Add Order are inside
-the buffer. That is one comparison instead of eleven. The field readers keep an `assert`
-as a safety net, which disappears under `-DNDEBUG`.
+**Handler'lar template parametresi, virtual interface değil.** Virtual bir çağrı message
+başına bir table lookup demek, ve derleyicinin inline etmesini engelliyor. Template ile
+derleyici her handler tipi için bir kopya üretiyor ve çağrının içini görebiliyor. Aynı
+tercih protocol katmanını, arkasında bir order book olmadan test edilebilir yapıyor.
 
-**Handlers are template parameters, not virtual interfaces.** A virtual call would cost a
-table lookup per message and would stop the compiler from inlining. With a template the
-compiler builds one copy per handler type and can see straight through the call. The same
-choice makes the protocol layer testable without an order book behind it.
+**Hot path header'larda yaşıyor.** Link-time optimisation olmadan GCC `.cpp` dosyaları
+arasında inline edemiyor. Parsing'i, book'u ve stratejiyi header'da tutmak, bir
+message'dan bir strateji kararına kadar bütün zinciri inline etmesine imkân veriyor.
+Sadece soğuk kod — config yükleme, raporlama, benchmark harness'ı, `main` — `src/`'de.
 
-**The hot path lives in headers.** Without link-time optimisation, GCC cannot inline
-across `.cpp` files. Keeping parsing, the book and the strategy in headers lets it inline
-the whole chain from one message to one strategy decision. Only cold code — config
-loading, reporting, the benchmark harness, `main` — sits in `src/`.
+**Order'lar sabit bir pool'da duruyor, hash index'inden bulunuyor.** Pool,
+`max_active_orders` kadar slot'tan oluşan tek bir dizi. Boş slot'lar bir linked list
+oluşturuyor ve "next" pointer'ı kullanılmayan slot'un kendi içinde duruyor, yani slot
+almak da geri vermek de O(1) ve ek bellek istemiyor. Ayrı bir index, order id'yi slot
+numarasına eşliyor.
 
-**Orders live in a fixed pool, found through a hash index.** The pool is one array of
-slots sized from `max_active_orders`. Free slots form a linked list whose "next" pointer
-is stored inside the unused slot itself, so taking and returning a slot are both O(1) and
-cost no extra memory. A separate index maps an order id to a slot number.
+Akla ilk gelen alternatif `std::unordered_map`'ti ve üç sebepten elendi: order başına bir
+node allocate ediyor, ki bu message başına allocation demek; node'lar allocator nereye
+koyduysa orada duruyor, yani her lookup soğuk belleğe bir pointer takibi; ve büyürken
+rehash yapıyor, ki bu feed'in ortasında öngörülemez bir duraklama.
 
-`std::unordered_map` was the obvious alternative and was rejected on three counts: it
-allocates a node per order, which is per-message allocation; its nodes sit wherever the
-allocator put them, so every lookup is a pointer chase into cold memory; and it rehashes
-when it grows, which is an unpredictable pause in the middle of a feed.
+Index, 2'nin kuvveti boyutunda ve en fazla yarısı dolu bir table üzerinde open addressing
++ linear probing. Ortalama lookup bir ya da iki bucket'a dokunuyor. Silme işlemi
+tombstone bırakmak yerine entry'leri geri kaydırıyor. Tombstone daha basit olurdu ama
+burada order'lar sürekli siliniyor ve o mezarlık zamanla her probe'u bir scan'e
+çevirirdi.
 
-The index is open addressing with linear probing over a power-of-two table kept at most
-half full, so the average lookup touches about one or two buckets. Deletion shifts
-entries back rather than leaving tombstones. Tombstones are simpler, but orders are
-removed constantly here and the graveyard would slowly turn every probe into a scan.
+**Side başına bir index var, ama pool ortak.** Bir order hangi side'da olursa olsun bir
+slot kaplıyor, yani pool paylaşılıyor ve toplam tek bir sayıyla sınırlanıyor. Index'in
+side başına olması zorunlu, çünkü ITCH order id'leri book *ve side* bazında unique: aynı
+id aynı anda iki side'da da canlı olabiliyor, ve tek bir table ikincisine duplicate
+derdi.
 
-**There is one index per side, but one shared pool.** An order takes a slot whatever side
-it is on, so the pool is shared and the total is bounded by one number. The index has to
-be per side because ITCH order ids are unique per book *and side*: the same id can be
-live on both sides at once, and a single table would call the second one a duplicate.
+**Price level'lar `price - base_price` ile index'lenen yoğun bir dizi.** Fiyatlar tam
+kuruş, yani level'a tek bir çıkarmayla ulaşılıyor. Arama yok, karşılaştırma yok, hiçbir
+şey yeniden sıralanmıyor. Sıralı bir vector best price'ı bedavaya index 0'a koyardı, ama
+baskın işlem order id → price → level ve o her seferinde bir binary search olurdu; dahası
+insert ve erase index'leri kaydırdığı için bir order kendi level'ının nerede olduğunu
+tutamazdı.
 
-**Price levels are a dense array indexed by `price - base_price`.** Prices are whole
-kurus with `tick_size` 1, so the level is reached by one subtraction. No search, no
-comparison, nothing reordered. A sorted vector would put the best price at index 0 for
-free, but the dominant operation is order id to price to level, and that would be a
-binary search every time; worse, insert and erase shift indices, so an order could not
-hold on to where its level lives. The sample feed settles the memory question too: the
-target book moved across 3,780 ticks in a day, so the array is small enough to stay in
-cache.
+Dizi kuruş başına bir slot tutuyor. Enstrüman 10 kuruşluk bir grid'de işlem gördüğü için
+slot'ların onda dokuzu boş kalıyor. Bunu kabul ettim: dizi zaten küçük (taraf başına
+16.384 slot, toplam yarım megabyte civarı, yani cache'te kalıyor) ve index hesabı tek bir
+çıkarma olarak kalıyor. Tick'e bölmek bir division eklerdi ve `tick_size`'ın gerçekten
+sabit olmasına bel bağlardı.
 
-`base_price` is fixed from the first price seen, centred in the band. A price outside the
-band is a safe error rather than a write past the array.
+`base_price` görülen ilk fiyattan sabitleniyor, band'ın ortasına oturtularak. Band dışında
+bir fiyat, dizinin dışına yazmak yerine güvenli bir hata.
 
-**The two sides are separate arrays.** One array with a side tag per level would halve
-the memory, but inside a timestamp group a price really can be on both sides at once:
-adding the new ask before deleting the old bid is a legal order of events, and a single
-tag cannot represent it.
+**İki side ayrı dizilerde.** Level başına bir side tag'i tutan tek dizi belleği yarıya
+indirirdi, ama bir timestamp group'unun içinde bir fiyat gerçekten aynı anda iki side'da
+olabiliyor: yeni ask'i eklemeden önce eski bid'i silmemek geçerli bir olay sırası, ve tek
+bir tag bunu temsil edemiyor.
 
-**Best bid and ask move incrementally.** A new level can only improve the best, so adding
-one costs a single comparison. When the best level empties, the next one is found through
-a bitset with one bit per level: one 64-bit word answers for 64 levels at a time, and
-`__builtin_ctzll` picks the bit out in one instruction. Walking levels one at a time
-would be fine most of the time and occasionally terrible, which is the shape that ruins a
-tail latency.
+**Best bid ve ask artımlı hareket ediyor.** Yeni bir level best'i sadece iyileştirebilir,
+yani eklemek tek bir karşılaştırma. Best level boşaldığında bir sonraki, level başına bir
+bit tutan bir bitset üzerinden bulunuyor: tek bir 64-bit word 64 level'ı birden
+cevaplıyor, ve `__builtin_ctzll` ilgili biti tek instruction'da çekip çıkarıyor.
+Level'ları tek tek yürümek çoğu zaman sorunsuz olurdu, arada bir ise felaket — ki bu tam
+olarak tail latency'yi mahveden şekil.
 
-## Performance
+## Performans
 
-Fifty passes over the 584 MB feed, pinned to one core. Full method and
-environment in [benchmark_report.md](benchmark_report.md).
+584 MB'lık feed üzerinde elli pass, tek çekirdeğe pinli. Bütün yöntem ve ortam
+[benchmark_report.md](benchmark_report.md) içinde.
 
 | | |
 |---|---|
-| Best pass | 0.101 s for 15,560,041 messages |
-| Throughput | 154 M messages/second, 6.5 ns per message |
-| Per-datagram latency | p50 119 ns, p99 459 ns, p99.9 1,039 ns |
-| **Hot-path allocations** | **0** |
-| Peak memory | 577 MB, of which 557 MiB is the input file |
-| Checksum | identical on all fifty passes |
+| En iyi pass | 15.560.041 message için 0,101 s |
+| Throughput | 154 M message/saniye, message başına 6,5 ns |
+| Datagram başına latency | p50 119 ns, p99 459 ns, p99.9 1.039 ns |
+| **Hot path allocation** | **0** |
+| Tepe bellek | 577 MB, bunun 557 MiB'ı input dosyası |
+| Checksum | elli pass'ın hepsinde aynı |
 
-Zero allocations is a measurement rather than a claim: the global
-`operator new` is replaced, so every allocation anywhere in the program is
-counted. The counter is reset once the pipeline is built and read when the
-pass ends.
+Sıfır allocation bir iddia değil, bir ölçüm: global `operator new` değiştirildiği için
+programın herhangi bir yerindeki her allocation sayılıyor. Sayaç pipeline kurulduktan
+sonra sıfırlanıyor ve pass bittiğinde okunuyor.
 
-Most of the throughput is messages being thrown away. 98% of the feed belongs
-to other order books and is rejected after reading the type byte, checking
-the length and comparing one 32-bit field, so the 6.5 ns average is mostly
-the cost of saying no. A target message costs considerably more.
+Throughput'un büyük kısmı aslında atılan message'lar. Feed'in %98'i başka order book'lara
+ait ve type byte'ı okunup, uzunluk kontrol edilip, tek bir 32-bit field karşılaştırılarak
+eleniyor — yani 6,5 ns'lik ortalama çoğunlukla "hayır" demenin maliyeti. Hedef bir
+message'ın maliyeti bundan epey yüksek.
 
-The gap between p50 and p99.9 is where the design shows. The occupancy bitset
-stops the best-price search turning into a scan when a level empties with a
-gap above it, and backward-shift deletion keeps hash probes short however many
-orders have been and gone. Both were chosen for the tail, not the average.
+p50 ile p99.9 arasındaki fark, tasarımın görüldüğü yer. Occupancy bitset'i, bir level
+üstünde boşlukla birlikte boşaldığında best-price aramasının bir scan'e dönüşmesini
+engelliyor; backward-shift deletion ise kaç order gelip giderse gitsin hash probe'larını
+kısa tutuyor. İkisi de ortalama için değil, kuyruk için seçildi.
 
-The reported maximum, 8.3 ms, is the hypervisor rather than the code: this
-runs under WSL2 and the host can deschedule the whole guest. Packets are
-uniform at 30 messages each, so there is no large datagram to blame.
+Raporlanan maksimum olan 8,3 ms kodun değil, hypervisor'ın: bu makine WSL2 altında
+koşuyor ve host misafiri komple durdurabiliyor. Packet'ler tek tip, her biri 30 message,
+yani suçlanacak büyük bir datagram yok.
 
-## Complexity
+## Karmaşıklık
 
-| Step | Time | Space |
+| Adım | Zaman | Yer |
 |---|---|---|
-| Read one field | O(1) | none |
-| Frame one packet | O(blocks) | none |
-| Dispatch one message | O(1) | one small struct on the stack |
-| Filter a non-target message | O(1), two reads | none |
+| Bir field oku | O(1) | yok |
+| Bir packet'i çerçevele | O(block sayısı) | yok |
+| Bir message'ı dispatch et | O(1) | stack'te küçük bir struct |
+| Hedef dışı bir message'ı ele | O(1), iki okuma | yok |
 
-Nothing in the protocol layer scans or sorts. A packet costs one pass over its blocks,
-and a message costs a fixed number of reads.
+Protocol katmanında hiçbir şey scan etmiyor ya da sıralamıyor. Bir packet, block'ları
+üzerinden tek bir geçişe mal oluyor; bir message ise sabit sayıda okumaya.
 
-The order book and the layers above it:
+Order book ve üstündeki katmanlar:
 
-| Step | Time | Space |
+| Adım | Zaman | Yer |
 |---|---|---|
-| Add an order | O(1) expected | one 24-byte slot |
-| Find an order by id | O(1) expected | none |
-| Remove an order | O(1) expected, plus the probe run it shifts back | none |
-| Add or remove quantity at a level | O(1) | none |
-| Best price, when the level stays occupied | O(1) | none |
-| Best price, after the level empties | O(gap / 64) words of the bitset | none |
-| Mark a level as touched in a group | O(1) | none |
-| Start a new group | O(1) | none |
-| Evaluate the strategy for one level | O(1) | none |
-| Record a fill | O(1) | none |
+| Order ekle | beklenen O(1) | 24 byte'lık bir slot |
+| Order'ı id'den bul | beklenen O(1) | yok |
+| Order sil | beklenen O(1), artı geri kaydırdığı probe dizisi | yok |
+| Bir level'da miktar ekle/çıkar | O(1) | yok |
+| Best price, level dolu kalıyorsa | O(1) | yok |
+| Best price, level boşaldıktan sonra | bitset'in O(boşluk / 64) word'ü | yok |
+| Bir level'ı group'ta dokunulmuş işaretle | O(1) | yok |
+| Yeni group başlat | O(1) | yok |
+| Bir level için stratejiyi değerlendir | O(1) | yok |
+| Bir fill kaydet | O(1) | yok |
 
-"Expected" on the hash operations means the probe run is short, which depends on the
-table staying sparse. It is sized at twice `max_active_orders`, so it never passes 50%
-occupancy, and deletion shifts the run back rather than leaving a tombstone, so probe
-runs do not grow over a session however many orders come and go.
+Hash işlemlerindeki "beklenen", probe dizisinin kısa olmasına dayanıyor, o da table'ın
+seyrek kalmasına. Table `max_active_orders`'ın iki katı boyutunda, yani %50 doluluğu hiç
+geçmiyor; ve silme, tombstone bırakmak yerine diziyi geri kaydırdığı için bir seansta kaç
+order gelip giderse gitsin probe'lar uzamıyor.
 
-The one step that is not constant is finding the next best price after a level empties.
-The occupancy bitset makes it 64 levels per word, so a 1,000-tick gap is 16 words rather
-than 1,000 checks. The alternative, a sorted container, would make every insert
-O(log n) to make this one step cheaper; the gap is rare and inserts are not.
+Sabit olmayan tek adım, bir level boşaldıktan sonra bir sonraki best price'ı bulmak.
+Occupancy bitset'i bunu word başına 64 level'a indiriyor, yani 1.000 kuruşluk bir boşluk
+1.000 kontrol değil 16 word. Alternatifi sıralı bir container'dı; o da bu tek adımı
+ucuzlatmak için her insert'ü O(log n) yapardı. Boşluk nadir, insert'ler değil.
 
-Starting a group is O(1) because of a generation counter: the journal keeps a generation
-number per level and bumps one counter instead of clearing its arrays. A level whose
-generation is stale reads as untouched. Clearing 16,384 entries per side on every
-timestamp change would be the single most expensive thing the engine does.
+Group başlatmanın O(1) olmasının sebebi bir generation counter: journal level başına bir
+generation numarası tutuyor ve dizilerini temizlemek yerine tek bir sayacı artırıyor.
+Generation'ı eski kalan bir level "dokunulmamış" okunuyor. Her timestamp değişiminde
+taraf başına 16.384 entry'yi temizlemek, engine'in yaptığı tek başına en pahalı iş
+olurdu.
 
+## Allocation, kapasite ve hata yönetimi
 
+Input dosyası herhangi bir timed region'dan önce bir kez belleğe alınıyor. Ondan sonra
+protocol katmanı hiç allocate etmiyor: `ByteReader` sadece bir pointer ve bir uzunluk
+tutuyor, decode edilen message'lar stack'te düz struct'lar, ve sayaçlar sabit field'lar.
 
-## Allocation, capacity and error handling
+Order pool allocate ediyor, ama sadece constructor'ında. `max_active_orders` kadar slot
+ve bunun iki katı boyutunda bir index table alıyor; ikisi de bir kez boyutlanıyor ve asla
+büyümüyor. İkisi için de `std::vector` kullanılıyor çünkü belleği güvenli şekilde
+sahipleniyor, ama hiçbirine `push_back` çağrılmıyor — yani hiçbir şey yer değiştirmiyor
+ve pool'a bakan hiçbir pointer bayatlamıyor. Ödevin yasakladığı şey message başına
+allocation, kurulum değil.
 
-The input file is loaded into memory once, before any timed region. After that the
-protocol layer never allocates: `ByteReader` only holds a pointer and a length, the
-decoded messages are plain structs on the stack, and the counters are fixed fields.
+Hatalar return value ve sayaç, asla exception değil. Ödev exception'ın hot path'te normal
+kontrol akışı olarak kullanılmamasını istiyor, ve burada bozuk bir packet zaten normal
+bir durum: sayılıyor ve atlanıyor, ortalıkta fırlatılmıyor.
 
-The order pool does allocate, but only in its constructor. It takes
-`max_active_orders` slots and an index table of twice that, both sized once and never
-grown. `std::vector` is used for them because it owns the memory safely, but
-`push_back` is never called on either, so nothing moves and no pointer into the pool
-goes stale. Per-message allocation is what the assignment rules out, not setup.
+Her problem türü ayrı ayrı sayılıyor, böylece son rapor gerçekte ne olduğunu
+söyleyebiliyor:
 
-Errors are return values and counters, never exceptions. The assignment rules out
-exceptions as normal control flow in the hot path, and a bad packet is normal here: it is
-counted and skipped, not thrown about.
-
-Each kind of problem is counted on its own, so the final report can say what actually
-happened:
-
-| Counter | Raised when |
+| Sayaç | Ne zaman artıyor |
 |---|---|
-| `invalid_packets` | header shorter than 20 bytes, block length past the end of the packet, blocks that do not add up to the datagram |
-| `sequence_gaps` | a packet or heartbeat starts later than the next expected message |
-| `duplicates` | a packet that was already seen, in full or in part |
-| `invalid_messages` | a handled type with the wrong length, or a side byte that is neither `B` nor `S` |
-| `skipped_types` | a message type this build does not handle |
+| `invalid_packets` | header 20 byte'tan kısa, block length packet'in dışına taşıyor, ya da block'lar datagram'ı tam doldurmuyor |
+| `sequence_gaps` | bir packet ya da heartbeat beklenen message'tan ileriden başlıyor |
+| `duplicates` | tamamı ya da bir kısmı daha önce görülmüş bir packet |
+| `invalid_messages` | işlenen bir type yanlış uzunlukta, ya da side byte'ı `B` veya `S` değil |
+| `skipped_types` | bu build'in işlemediği bir message type'ı |
 
-A corrupt side byte is rejected in the parser rather than in the order book. `Side` is
-used as an array index further down, so this is the last point where a bad value can be
-stopped safely.
+Bozuk bir side byte'ı order book'ta değil, parser'da reddediliyor. `Side` aşağıda dizi
+index'i olarak kullanılıyor, yani bozuk bir değerin güvenle durdurulabileceği son nokta
+orası.
 
-Two limits can be reached, and both stop the strategy instead of damaging anything:
+İki limite ulaşılabiliyor, ve ikisi de bir şeyi bozmak yerine stratejiyi durduruyor:
 
-- `max_active_orders` — the pool reports that it is full and the order is not stored.
-  Nothing is overwritten and the orders already there are untouched.
-- `max_price_levels` — a price outside the band is refused. If the order had already
-  gone into the pool it is taken back out, so the pool and the levels never disagree.
+- `max_active_orders` — pool dolduğunu bildiriyor ve order saklanmıyor. Hiçbir şeyin
+  üzerine yazılmıyor, hâlihazırdaki order'lara dokunulmuyor.
+- `max_price_levels` — band dışındaki bir fiyat reddediliyor. Order pool'a girmişse geri
+  çıkarılıyor, yani pool ile level'lar hiçbir zaman birbirine ters düşmüyor.
 
-Either one latches a flag the strategy checks. The book cannot be trusted after that
-point, so it stops producing orders rather than trading on a book it knows is wrong.
+İkisi de stratejinin kontrol ettiği bir bayrağı kalıcı olarak indiriyor. O noktadan sonra
+book'a güvenilemez, o yüzden yanlış olduğunu bildiği bir book üzerinden işlem yapmak
+yerine order üretmeyi kesiyor.
 
-## Sequence gap behaviour
+## Sequence gap davranışı
 
-MoldUDP64 numbers **messages**, not packets. A packet header gives the sequence number of
-its first message and how many it carries, so the next expected number is
-`sequence + count`.
+MoldUDP64 packet değil, **message** numaralıyor. Bir packet header'ı içindeki ilk
+message'ın sequence numarasını ve kaç message taşıdığını veriyor, yani beklenen sonraki
+numara `sequence + count`.
 
-Four cases are told apart. Say the next expected message is 8:
+Dört durum ayırt ediliyor. Diyelim beklenen sonraki message 8:
 
-| Packet says | Case | What happens |
+| Packet ne diyor | Durum | Ne oluyor |
 |---|---|---|
-| first 8, count 3 | in order | all three are processed |
-| first 12, count 1 | **gap** | 8 to 11 are lost; the gap is counted, the book is marked unreliable, and the packet is still processed |
-| first 4, count 3 | **already seen** | the whole packet is dropped |
-| first 6, count 4 | **partial overlap** | 6 and 7 are skipped, 8 and 9 are processed |
+| ilk 8, count 3 | sırada | üçü de işleniyor |
+| ilk 12, count 1 | **gap** | 8–11 kayıp; gap sayılıyor, book unreliable işaretleniyor, packet yine de işleniyor |
+| ilk 4, count 3 | **zaten görülmüş** | packet komple atılıyor |
+| ilk 6, count 4 | **kısmi örtüşme** | 6 ve 7 atlanıyor, 8 ve 9 işleniyor |
 
-The last case matters. A retransmission can overlap what we already have. Processing all
-of it would apply the same orders twice and corrupt the book. Dropping all of it would
-lose the new messages.
+Son durum önemli. Bir retransmission elimizdekiyle örtüşebiliyor. Hepsini işlemek aynı
+order'ları iki kez uygulayıp book'u bozardı. Hepsini atmak ise yeni message'ları
+kaybettirirdi.
 
-Heartbeats carry the sequence number of the next message, so they can show a gap even
-though they carry no data. That case is handled too.
+Heartbeat'ler bir sonraki message'ın sequence numarasını taşıyor, yani hiç data
+taşımadıkları halde bir gap'i gösterebiliyorlar. O durum da ele alınıyor.
 
-**After a gap, the book stays marked unreliable.** The strategy will not produce new
-orders while this flag is down. The flag only comes back up when the session changes,
-because a new session is a new stream and the old gap no longer applies.
+**Bir gap'ten sonra book unreliable işaretli kalıyor.** Bu bayrak inikken strateji yeni
+order üretmiyor. Bayrak ancak session değiştiğinde geri kalkıyor, çünkü yeni bir session
+yeni bir stream demek ve eski gap artık geçerli değil.
 
-This is a decision, not something the assignment states. Missed messages cannot be
-recovered without a snapshot feed such as GLIMPSE, so the conservative reading is that
-the book never fully recovers inside the same session.
+Bu bir karar, ödevin söylediği bir şey değil. Kaçırılan message'lar GLIMPSE gibi bir
+snapshot feed'i olmadan geri alınamıyor, o yüzden ihtiyatlı okuma şu: aynı session'ın
+içinde book bir daha tam olarak toparlanmıyor.
 
-## Assumptions
+## Varsayımlar
 
-These are the points where the protocol documents or the assignment left something open.
+Protokol dokümanlarının ya da ödevin açık bıraktığı noktalar bunlar.
 
-**`'T'` Seconds messages are tracked but never applied to the book.** ITCH splits the
-timestamp: the second comes in its own message and every other message carries only
-nanoseconds since that message. The nanosecond field therefore restarts every second.
-Grouping on it alone would merge two messages a second apart into one group. The parser
-keeps the current second and builds a 64-bit value instead:
-`second * 1,000,000,000 + nanos`. The assignment lists four message types to handle and
-`'T'` is not one of them, but watching a message and applying it to the book are two
-different things.
+**`'T'` Seconds message'ları takip ediliyor ama book'a hiç uygulanmıyor.** ITCH
+timestamp'i ikiye bölüyor: saniye kendi message'ında geliyor, diğer her message ise o
+message'tan beri geçen nanosaniyeyi taşıyor. Yani nanosaniye alanı her saniye baştan
+başlıyor. Sadece ona bakarak gruplamak, bir saniye arayla gelen iki message'ı tek bir
+group'ta birleştirirdi. Parser bunun yerine mevcut saniyeyi tutup 64-bit bir değer
+kuruyor: `saniye × 1.000.000.000 + nanos`. Ödev işlenecek dört message type'ı sayıyor ve
+`'T'` onlardan biri değil, ama bir message'ı izlemekle onu book'a uygulamak farklı iki
+şey.
 
-**Messages that arrive before the first `'T'` are processed with second 0.** This only
-happens if the capture starts in the middle of the stream. The absolute time is then
-wrong, but ordering inside that stretch still works, so dropping the messages would lose
-more than it saves. They are counted in `before_first_second`.
+**İlk `'T'` gelmeden önceki message'lar saniye 0 ile işleniyor.** Bu sadece kayıt
+stream'in ortasından başlarsa oluyor. O durumda mutlak zaman yanlış, ama o aralıktaki
+sıralama yine doğru çalışıyor, yani message'ları atmak kazandırdığından fazlasını
+kaybettirirdi. `before_first_second` sayacında tutuluyorlar.
 
-**`'C'` and `'Y'` are skipped, and on this feed that costs nothing.** The assignment says
-to handle only four message types, but the spec's own "How to Build an Order Book View"
-section also lists `'C'` (Order Executed with Price), which reduces an order's quantity,
-and `'Y'` (Order Book Flush), which clears a book. Both were checked against the sample
-feed:
+**`'C'` ve `'Y'` atlanıyor, ve bu feed'de bunun bir bedeli yok.** Ödev sadece dört message
+type'ının işlenmesini söylüyor, ama spec'in kendi "How to Build an Order Book View"
+bölümü `'C'` (Order Executed with Price — bir order'ın quantity'sini azaltıyor) ve `'Y'`
+(Order Book Flush — bir book'u komple temizliyor) type'larını da sayıyor. İkisi de örnek
+veriye karşı kontrol edildi:
 
-- `'C'` does not appear at all. Not once, in 15.5 million messages.
-- `'Y'` appears 3,897 times and touches book 73616 four times. None of them can change
-  the result. The first lands while the book is still empty. The second shares its
-  timestamp with `P_MARJ_YAYIN_KAPANIS`, by which point the strategy has already stopped.
-  The other two come after the close.
+- `'C'` hiç geçmiyor. 15,5 milyon message içinde bir kez bile.
+- `'Y'` 3.897 kez geçiyor ve book 73616'ya dört kez dokunuyor. Hiçbiri sonucu
+  değiştiremez. Birincisi book daha boşken geliyor. İkincisi `P_MARJ_YAYIN_KAPANIS` ile
+  aynı timestamp'i paylaşıyor, yani strateji o noktada zaten durmuş. Diğer ikisi
+  kapanıştan sonra.
 
-So skipping them is safe here. It would not be safe in general, and a feed where `'C'`
-was used, or where a flush landed during continuous trading, would need both.
+Yani burada atlamak güvenli. Genel olarak güvenli değil, ve `'C'` kullanan ya da
+continuous trading sırasında flush gelen bir feed ikisini de gerektirirdi.
 
-`'U'` (Order Replace) is not used on BIST markets, so it costs nothing either.
+`'U'` (Order Replace) BIST piyasalarında kullanılmıyor, yani onun da bir bedeli yok.
 
-**A session change resets sequence tracking and restores trust.** A different session
-name means a different stream with its own numbering, so a low sequence number after a
-change is not a duplicate, and a gap from the old stream no longer applies.
+**Session değişimi sequence takibini sıfırlıyor ve güveni geri veriyor.** Farklı bir
+session adı, kendi numaralandırması olan farklı bir stream demek; yani değişimden sonraki
+düşük bir sequence numarası duplicate değil, ve eski stream'den kalan bir gap artık
+geçerli değil.
 
-**A side byte that is not `B` or `S` makes the message invalid.** The message is counted
-and dropped instead of being guessed at.
+**`B` ya da `S` olmayan bir side byte'ı message'ı geçersiz yapıyor.** Message tahmin
+edilmek yerine sayılıp atılıyor.
 
-**`tick_size` is 10, not the 1 the assignment shows.** The assignment's example
-config says 1, and with that value no spread is ever exactly two ticks and the
-strategy never fires. Book 73616 trades on a 10-kurus grid: every pair of
-adjacent prices in the feed is 10 apart, and the spread sits at 10 for 90.8% of
-continuous trading and at 20 for 8.6%. That 20 is the single empty step. The
-configuration supplied with the data later confirmed 10.
+**`tick_size` 10, ödevin gösterdiği 1 değil.** Ödevin örnek config'i 1 diyor, ve o değerle
+hiçbir spread tam olarak iki tick olmuyor, yani strateji hiç tetiklenmiyor. Book 73616, 10
+kuruşluk bir grid'de işlem görüyor: feed'deki her komşu fiyat çifti 10 kuruş arayla, ve
+spread continuous trading'in %90,8'inde 10, %8,6'sında 20. O 20 zaten aradığımız tek boş
+adım. Veriyle birlikte gelen config sonradan 10'u doğruladı.
 
-**`minimum_position` is 0, so nothing is sold short.** The sell size is
-`position - minimum_position`, which with a floor of zero means only what is
-already held can be sold. The first order of the day is therefore always a buy.
-A side effect: every order comes out at the full 100 lots, because fills only
-ever move the position in steps of 100, so the room left is either zero or at
-least 100 and the partial sizing never triggers.
+**`minimum_position` 0, yani short satış yok.** Satış miktarı
+`position - minimum_position`, ve taban sıfır olunca sadece elde olan satılabiliyor.
+Dolayısıyla günün ilk order'ı her zaman bir alış. Bir yan etkisi var: her order tam 100
+lot çıkıyor, çünkü fill'ler pozisyonu hep 100'lük adımlarla hareket ettiriyor, yani kalan
+yer ya sıfır ya da en az 100 oluyor ve kısmi boyutlandırma hiç devreye girmiyor.
 
-**A capacity of -1 switches that limit off, but something still has to be
-allocated.** A fixed-capacity design cannot have no capacity, so -1 selects a
-built-in default: 65,536 orders and 16,384 price levels. The feed's target book
-peaked at 4,528 live orders across a 3,780 tick band, so both leave more than
-ten times the room needed. Growing the structures instead was rejected: it
-would put allocation back on the hot path, which is the one thing the
-assignment rules out. Exceeding the default is still a safe error, because
-there is no honest alternative, but it is no longer the configured limit being
-reached.
+**Kapasitenin `-1` olması o limiti kapatıyor, ama yine de bir şeyin allocate edilmesi
+gerekiyor.** Fixed-capacity bir tasarımın "kapasitesiz" olması mümkün değil, o yüzden -1
+yerleşik bir default seçiyor: 65.536 order ve 16.384 price level. Feed'in target book'u en
+fazla 4.528 canlı order ve 3.780 kuruşluk bir band gördü, yani ikisi de gerekenin on
+katından fazla yer bırakıyor. Yapıları büyütmek alternatifti ve reddedildi: allocation'ı
+hot path'e geri koyardı, ki ödevin yasakladığı tek şey o. Default'u aşmak yine güvenli bir
+hata, çünkü dürüst bir alternatifi yok — ama artık "konfigüre edilen limite ulaşıldı"
+demek değil.
 
-**The day is valued when `P_MARJ_YAYIN_KAPANIS` arrives, not at end of file.**
-The feed keeps trading after the close - closing auction, more executions - and
-the last traded price drifts. On this day it was 19,160 at the close and 19,150
-by the end of the file.
+**Gün `P_MARJ_YAYIN_KAPANIS` geldiğinde değerleniyor, dosya sonunda değil.** Feed kapanıştan
+sonra da işlem görmeye devam ediyor — kapanış seansı, yeni execution'lar — ve son işlem
+fiyatı kayıyor. Bu günde kapanışta 19.160, dosyanın sonunda 19.150.
 
-**Price uses the sentinel from the spec.** A Price field with bit 31 set and every other
-bit zero (`INT32_MIN`) means "no price", and in an Add Order it means a market order. Such
-an order has no price level and must not be placed on one.
+**Price, spec'teki sentinel'i kullanıyor.** 31. biti set ve diğer her biti sıfır olan bir
+Price field'ı (`INT32_MIN`) "price yok" demek, ve bir Add Order'da market order anlamına
+geliyor. Böyle bir order'ın price level'ı yok ve bir level'a konmamalı.
 
-**Packet framing in the file is one packet after another, confirmed.** Nothing is
-specified about this anywhere, so it was checked directly: the file has no pcap or pcapng
-magic number, and walking it as bare MoldUDP64 packets — 20 bytes of header plus the sum
-of `2 + block length` over the blocks — lands exactly on the last byte after 519,492
-packets, with no leftover and no block running past an end. It is still kept behind
-`io/datagram_source.hpp` so a different feed with another layout is a one-file change.
+**Dosyadaki packet framing'i arka arkaya, doğrulandı.** Bu konuda hiçbir yerde bir şey
+yazmıyor, o yüzden doğrudan kontrol ettim: dosyada pcap ya da pcapng magic number'ı yok,
+ve onu çıplak MoldUDP64 packet'leri olarak yürümek — 20 byte header artı block'lar
+üzerinden `2 + block length` toplamı — 519.492 packet sonra tam olarak son byte'a
+oturuyor, artan yok ve sonu taşan bir block yok. Yine de `io/datagram_source.hpp`'nin
+arkasında tutuluyor, böylece başka bir düzene sahip bir feed tek dosyalık bir değişiklik
+oluyor.
 
-Cash flow and P&L are stored in `int64_t`. The maximum term per fill is
-`order_quantity * price`, so with the configured values (100 lots, an upper bound of
-100,000 kurus) this comes to 10^7, leaving headroom of around 9x10^11 fills before
-`INT64_MAX` — around 4 billion times the order count a typical session produces. If the
-configuration gets more extreme (10^6 lots, a price near `INT32_MAX`) that headroom drops
-to about 4,300 fills, so the multiplication and the accumulation are both checked with
-`__builtin_mul_overflow` and `__builtin_add_overflow` in debug builds. `__int128` is not
-used for the simple reason that it falls outside ISO C++11 and raises a warning under
-`-Wpedantic`.
+Cash flow ve P&L `int64_t`'de tutuluyor. Fill başına en büyük terim
+`order_quantity * price`, yani konfigüre edilen değerlerle (100 lot, üst sınır 100.000
+kuruş) bu 10⁷ ediyor ve `INT64_MAX`'a kadar yaklaşık 9×10¹¹ fill'lik yer kalıyor — tipik
+bir seansın ürettiği order sayısının yaklaşık 4 milyar katı. Konfigürasyon daha uç
+olursa (10⁶ lot, `INT32_MAX`'a yakın bir fiyat) bu pay yaklaşık 4.300 fill'e düşüyor, o
+yüzden hem çarpma hem toplama debug build'lerinde `__builtin_mul_overflow` ve
+`__builtin_add_overflow` ile kontrol ediliyor. `__int128` kullanılmamasının sebebi basit:
+ISO C++11'in dışında kalıyor ve `-Wpedantic` altında uyarı veriyor.
 
 ## Benchmark
 
@@ -409,119 +425,118 @@ used for the simple reason that it falls outside ISO C++11 and raises a warning 
 taskset -c 4 ./orderbook --benchmark itch_data_250815_HI2.dat --iterations 50 --config config.txt
 ```
 
-Five rules decide what the number means:
+Sayının ne anlama geldiğini beş kural belirliyor:
 
-1. The file is in memory before anything is timed.
-2. One warm-up pass runs unmeasured and is thrown away.
-3. The data is replayed many times, and each pass builds a fresh pipeline.
-4. No file or console output happens inside the timed region.
-5. Each pass produces a checksum, so `-O3` cannot delete the work as dead.
+1. Dosya, hiçbir şey ölçülmeden önce bellekte.
+2. Bir warm-up pass'ı ölçülmeden koşup atılıyor.
+3. Data çok kez oynatılıyor, ve her pass yeni bir pipeline kuruyor.
+4. Timed region'ın içinde hiç dosya ya da konsol çıktısı yok.
+5. Her pass bir checksum üretiyor, böylece `-O3` işi ölü sayıp silemiyor.
 
-The allocation counter is reset after the pipeline is built and read when the pass ends,
-so it reports what the hot path asked for rather than what setup did.
+Allocation sayacı pipeline kurulduktan sonra sıfırlanıyor ve pass bittiğinde okunuyor,
+yani kurulumun değil, hot path'in ne istediğini raporluyor.
 
-Full environment, method and results: [benchmark_report.md](benchmark_report.md).
+Bütün ortam, yöntem ve sonuçlar: [benchmark_report.md](benchmark_report.md).
 
-## Tests
+## Testler
 
 ```
 make check
 ```
 
-The sample market data had not arrived when work started, so the test helpers build
-synthetic input instead. `tests/message_builder.hpp` writes real MoldUDP64 packets and
-the four ITCH messages, and it can also break one thing at a time: cut a header short,
-set a block length that runs past the packet, or claim more messages than the packet
-carries. The protocol tests are built on that.
+Çalışmaya başladığımda örnek piyasa verisi henüz elimde değildi, o yüzden test
+yardımcıları sentetik input üretiyor. `tests/message_builder.hpp` gerçek MoldUDP64
+packet'leri ve dört ITCH message'ı yazıyor, ve her seferinde tek bir şeyi bozabiliyor:
+header'ı kısa kesmek, packet'in dışına taşan bir block length koymak, ya da packet'in
+taşıdığından fazla message iddia etmek. Protocol testleri bunun üzerine kurulu.
 
-Both sides of the wire format are tested together. The builder writes bytes and
-`ByteReader` reads them back, and a round-trip test compares every field. Written
-separately, the two could still agree on a wrong offset and both look correct on their
-own; only the round trip catches that.
+Wire formatının iki tarafı birlikte test ediliyor. Builder byte yazıyor, `ByteReader`
+geri okuyor, ve bir round-trip testi her field'ı karşılaştırıyor. Ayrı ayrı yazılsalardı
+ikisi yanlış bir offset üzerinde anlaşıp tek tek bakıldığında doğru görünebilirdi; bunu
+sadece round trip yakalıyor.
 
-216 tests, in two layers. Most of them check one component against its own interface.
-On top of those, `test_protocol.cpp`, `test_strategy.cpp` and `test_pnl.cpp` build a
-feed out of wire bytes and run it through the whole assembled program, reading the
-result out of the reported summary. A component can be correct on its own and still be
-wired up wrongly: a counter read from the wrong object, a handler never reached, a limit
-applied to the wrong number. Only a run through the whole chain catches that.
+216 test, iki katman halinde. Çoğu tek bir bileşeni kendi arayüzüne karşı kontrol ediyor.
+Onların üstünde `test_protocol.cpp`, `test_strategy.cpp` ve `test_pnl.cpp` wire byte'ından
+bir feed kurup bütün programın içinden geçiriyor ve sonucu raporlanan özetten okuyor. Bir
+bileşen kendi başına doğru olup yine de yanlış bağlanmış olabilir: yanlış nesneden okunan
+bir sayaç, hiç ulaşılmayan bir handler, yanlış sayıya uygulanan bir limit. Bunu sadece
+bütün zincirden geçen bir koşu yakalıyor.
 
-The scenarios the assignment asks for, and where each one is checked end to end:
+Ödevin istediği senaryolar ve her birinin uçtan uca nerede kontrol edildiği:
 
-| Scenario | Test |
+| Senaryo | Test |
 |---|---|
-| Truncated header | `protocol_a_truncated_header_stops_the_walk_and_is_reported` |
-| Invalid message length | `protocol_a_message_shorter_than_its_type_is_counted_and_skipped` |
+| Kesik header | `protocol_a_truncated_header_stops_the_walk_and_is_reported` |
+| Geçersiz message length | `protocol_a_message_shorter_than_its_type_is_counted_and_skipped` |
 | Sequence gap | `protocol_a_sequence_gap_is_counted_and_silences_the_strategy` |
 | Heartbeat | `protocol_a_heartbeat_carries_nothing_and_breaks_nothing` |
 | End of session | `protocol_end_of_session_is_a_bare_header_and_frames_correctly` |
-| Non-target order book | `protocol_another_order_book_never_reaches_the_engine` |
-| Transient gap in one group | `strategy_e2e_a_gap_that_opens_and_closes_in_one_group_is_not_a_signal` |
-| Real BUY gap | `strategy_e2e_a_bid_that_vanishes_produces_one_buy` |
-| Real SELL gap | `strategy_e2e_an_ask_that_vanishes_produces_one_sell` |
-| Repeated signal suppressed | `strategy_e2e_one_order_per_gap_however_long_it_stays_open` |
-| Quantity cut near the limit | `pnl_e2e_the_quantity_is_cut_down_to_what_the_limit_allows` |
-| No order at the limit | `pnl_e2e_nothing_is_sent_when_there_is_no_room_left` |
+| Hedef dışı order book | `protocol_another_order_book_never_reaches_the_engine` |
+| Tek group içinde açılıp kapanan gap | `strategy_e2e_a_gap_that_opens_and_closes_in_one_group_is_not_a_signal` |
+| Gerçek BUY gap'i | `strategy_e2e_a_bid_that_vanishes_produces_one_buy` |
+| Gerçek SELL gap'i | `strategy_e2e_an_ask_that_vanishes_produces_one_sell` |
+| Tekrar eden signal bastırılıyor | `strategy_e2e_one_order_per_gap_however_long_it_stays_open` |
+| Limite yakın quantity kısılması | `pnl_e2e_the_quantity_is_cut_down_to_what_the_limit_allows` |
+| Limitte order üretilmemesi | `pnl_e2e_nothing_is_sent_when_there_is_no_room_left` |
 | BUY cash flow | `pnl_e2e_a_buy_pays_out_and_goes_long` |
 | SELL cash flow | `pnl_e2e_a_sell_takes_in_cash_and_goes_short` |
-| End of day mark to market | `pnl_e2e_the_day_is_marked_at_the_closing_price` |
+| Gün sonu mark to market | `pnl_e2e_the_day_is_marked_at_the_closing_price` |
 
-Each of these is also checked against the component that implements it, in
-`test_mold_udp64.cpp`, `test_itch_parser.cpp`, `test_gap_strategy.cpp` and
+Bunların her biri ayrıca onu uygulayan bileşene karşı da kontrol ediliyor:
+`test_mold_udp64.cpp`, `test_itch_parser.cpp`, `test_gap_strategy.cpp` ve
 `test_position.cpp`.
 
-## The sample feed
+## Örnek veri
 
-`itch_data_250815_HI2.dat`, 584 MB, 15 August 2025. One session, `TR29253481`.
+`itch_data_250815_HI2.dat`, 584 MB, 15 Ağustos 2025. Tek session, `TR29253481`.
 
 | | |
 |---|---|
-| Packets | 519,492 |
-| ITCH messages | 15,560,041 |
-| Order books in the file | 1,769 |
-| Sequence gaps / duplicates | 0 / 0 |
+| Packet | 519.492 |
+| ITCH message | 15.560.041 |
+| Dosyadaki order book sayısı | 1.769 |
+| Sequence gap / duplicate | 0 / 0 |
 | Target book 73616 | `EKGYO.E` |
-| Target messages (A / E / D) | 147,637 / 54,409 / 106,146 |
-| Peak live orders in the target book | 4,528 |
-| Price range | 17,060 to 20,840 kurus (3,780 ticks) |
-| Timestamp groups in the target book | 197,449 |
+| Target message (A / E / D) | 147.637 / 54.409 / 106.146 |
+| Target book'ta tepe canlı order | 4.528 |
+| Fiyat aralığı | 17.060 – 20.840 kuruş (3.780 kuruşluk band) |
+| Target book'taki timestamp group'u | 197.449 |
 
-Message types present: `A D E Z P T O L Y R V S`. Four of them are handled, the rest are
-skipped.
+Dosyada geçen message type'ları: `A D E Z P T O L Y R V S`. Dördü işleniyor, geri kalanı
+atlanıyor.
 
-The day runs `P_SUREKLI_ISLEM` to `P_MARJ_YAYIN_KAPANIS`, exactly eight hours apart, and
-each state appears once. Most timestamp groups are small — 61% hold a single message and
-37% hold two — but the largest holds 3,919, which is why the strategy must never run in
-the middle of one.
+Gün `P_SUREKLI_ISLEM` ile başlayıp `P_MARJ_YAYIN_KAPANIS` ile bitiyor, tam sekiz saat
+arayla, ve her durum bir kez geçiyor. Timestamp group'larının çoğu küçük — %61'i tek
+message, %37'si iki message taşıyor — ama en büyüğü 3.919 taşıyor, ki stratejinin bir
+group'un ortasında asla çalışmaması gerektiğinin sebebi tam olarak bu.
 
-The feed also carries no orders with a zero (undisclosed) quantity and no market-order
-price sentinel in the target book. Both are still handled, since neither is ruled out by
-the protocol.
+Feed'de ayrıca target book için sıfır (undisclosed) quantity'li order ve market order
+sentinel'i hiç geçmiyor. Yine de ikisi de ele alınıyor, çünkü protokol ikisini de
+dışlamıyor.
 
-The capacities in `config.example` are sized from these numbers with more than 10x
-headroom.
+`config.example` içindeki kapasiteler bu sayılardan, on kattan fazla boşluk bırakılarak
+belirlendi.
 
-## Known limitations
+## Bilinen kısıtlar
 
-**`'C'` and `'Y'` are not handled.** Verified harmless on this feed, as explained under
-Assumptions, but a feed that used `'C'`, or flushed a book during continuous trading,
-would need both. `'C'` reduces a quantity like `'E'` does, and `'Y'` clears the book, so
-neither is hard to add.
+**`'C'` ve `'Y'` işlenmiyor.** Bu feed'de zararsız olduğu doğrulandı — Varsayımlar
+bölümünde anlattım — ama `'C'` kullanan ya da continuous trading sırasında bir book'u
+flush eden bir feed ikisini de gerektirirdi. `'C'` tıpkı `'E'` gibi quantity azaltıyor,
+`'Y'` ise book'u temizliyor, yani ikisini de eklemek zor değil.
 
-**The fill model is optimistic, and the P&L should be read that way.** Every
-generated order is treated as filled in full at its own price. In a real market
-placing an order into a gap buys you queue position, not a trade: some orders
-never fill, and the ones that do are disproportionately the ones filled by
-whoever is pushing the price away from you. The number this produces is closer
-to an upper bound than to an estimate.
+**Fill model iyimser, ve P&L o gözle okunmalı.** Üretilen her order kendi fiyatından
+tamamen fill olmuş sayılıyor. Gerçek piyasada bir gap'e order koymak sana işlem değil,
+kuyruk sırası kazandırıyor: bazı order'lar hiç fill olmuyor, ve fill olanlar ağırlıklı
+olarak fiyatı senden uzağa iten tarafın doldurduğu order'lar oluyor. Buradan çıkan sayı
+bir tahminden çok bir üst sınıra yakın.
 
-**Only one day of data has been checked.** The capacity numbers above come from a single
-session. A busier day would need larger limits, which is why they are configuration
-rather than constants.
+**Sadece bir günlük veri kontrol edildi.** Yukarıdaki kapasite sayıları tek bir
+session'dan geliyor. Daha yoğun bir gün daha büyük limitler isterdi — sabit değil de
+config olmalarının sebebi bu.
 
-**A gap disables the strategy for the rest of the session.** With a snapshot feed the
-book could be rebuilt and trading could continue, but ITCH alone cannot do that.
+**Bir gap, stratejiyi session'ın geri kalanı için durduruyor.** Snapshot feed'i olsaydı
+book yeniden kurulup işleme devam edilebilirdi, ama tek başına ITCH bunu yapamıyor.
 
-**Latency numbers come from inside a VM.** Everything was measured under WSL2. The
-median and the useful percentiles are stable, but the far tail belongs to the
-hypervisor, so a bare-metal run would look different past p99.9.
+**Latency sayıları bir VM'in içinden geliyor.** Her şey WSL2 altında ölçüldü. Medyan ve
+işe yarar percentile'lar kararlı, ama uzak kuyruk hypervisor'a ait; bare metal bir koşu
+p99.9'un ötesinde farklı görünürdü.
