@@ -500,7 +500,7 @@ Bunların her biri ayrıca onu uygulayan bileşene karşı da kontrol ediliyor:
 | Target message (A / E / D) | 147.637 / 54.409 / 106.146 |
 | Target book'ta tepe canlı order | 4.528 |
 | Fiyat aralığı | 17.060 – 20.840 kuruş (3.780 kuruşluk band) |
-| Target book'taki timestamp group'u | 197.449 |
+| Target book'taki timestamp group'u | 197.463 |
 
 Dosyada geçen message type'ları: `A D E Z P T O L Y R V S`. Dördü işleniyor, geri kalanı
 atlanıyor.
